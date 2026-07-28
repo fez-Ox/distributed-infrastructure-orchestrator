@@ -159,9 +159,10 @@ class SnapshotManager:
             return snapshot_id
         size_bytes = 0
         for line in result.get("stdout", "").splitlines():
-            m = re.search(r'"stdout":\s*"(\d+)"', line)
+            m = re.search(r'MAO_SIZE=(\d+)', line)
             if m:
                 size_bytes = int(m.group(1))
+                break
         self.db.execute(
             "UPDATE snapshots SET size_bytes = ? WHERE snapshot_id = ?",
             (size_bytes or None, snapshot_id),

@@ -1,5 +1,6 @@
 - hosts: {{ target }}
   gather_facts: yes
+  become: yes
   tasks:
     - name: Create snapshot directory
       ansible.builtin.file:
@@ -33,3 +34,7 @@
       ansible.builtin.shell:
         cmd: du -sb {{ snapshot_path }} | cut -f1
       register: snap_size
+
+    - name: Report size
+      ansible.builtin.debug:
+        msg: "MAO_SIZE={{ '{{' }} snap_size.stdout {{ '}}' }}"

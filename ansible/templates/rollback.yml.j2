@@ -1,5 +1,6 @@
 - hosts: {{ target }}
   gather_facts: yes
+  become: yes
   tasks:
     - name: Check snapshot exists
       ansible.builtin.stat:
@@ -8,7 +9,7 @@
 
     - name: Fail if snapshot missing
       ansible.builtin.fail:
-        msg: "Snapshot not found at {{ snapshot_path }} on {{ inventory_hostname }}"
+        msg: "Snapshot not found at {{ snapshot_path }} on {{ '{{' }} inventory_hostname {{ '}}' }}"
       when: not snap_stat.stat.exists
 
     - name: Restore etc archive
@@ -28,8 +29,8 @@
     - name: Restore packages (Alpine)
       ansible.builtin.shell:
         cmd: >
-          apk add --no-cache
-          $(grep -v '^\[' {{ snapshot_path }}/packages.txt | awk '{print $1}')
+          grep -oP '{\K[^}]+' {{ snapshot_path }}/packages.txt
+          | sort -u | xargs apk add --no-cache
       when: ansible_os_family == "Alpine"
 
     - name: Restore packages (RedHat)

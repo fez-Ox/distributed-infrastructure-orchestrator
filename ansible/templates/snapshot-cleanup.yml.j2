@@ -1,5 +1,6 @@
 - hosts: {{ target }}
   gather_facts: no
+  become: yes
   tasks:
     - name: Remove snapshot directory
       ansible.builtin.file:
