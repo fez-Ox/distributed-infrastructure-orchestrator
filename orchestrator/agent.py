@@ -408,13 +408,32 @@ def main() -> None:
 
                             for resume_event in current_graph.stream(Command(resume=resume_val), config):
                                 if isinstance(resume_event, dict):
-                                    for _, resume_output in resume_event.items():
+                                    for step_node, resume_output in resume_event.items():
                                         if isinstance(resume_output, dict):
-                                            if resume_output.get("status"):
-                                                print(f"  Result: {resume_output['status']}")
-                                            if resume_output.get("ansible_stdout"):
-                                                for lo in resume_output["ansible_stdout"].splitlines()[-10:]:
-                                                    print(f"  {lo}")
+                                            status = resume_output.get("status", "")
+                                            if status == "rejected":
+                                                print(f"  Workflow rejected.")
+                                            elif status.startswith("step_"):
+                                                plan = state_vals.get("plan")
+                                                idx = resume_output.get("current_step_index", 0)
+                                                desc = plan.steps[idx - 1].description if plan and idx else ""
+                                                print(f"  Step {idx} of {len(plan.steps) if plan else '?'}: {desc}")
+                                                stdout = resume_output.get("ansible_stdout", "")
+                                                if stdout:
+                                                    for lo in stdout.splitlines()[-5:]:
+                                                        print(f"    {lo}")
+                                            elif status == "completed":
+                                                print(f"  All steps completed.")
+                                            elif status == "failed":
+                                                print(f"  Step failed.")
+                                                stdout = resume_output.get("ansible_stdout", "")
+                                                if stdout:
+                                                    for lo in stdout.splitlines()[-5:]:
+                                                        print(f"    {lo}")
+                                            if resume_output.get("status") not in ("", "rejected") and not status.startswith("step_"):
+                                                if resume_output.get("ansible_stdout"):
+                                                    for lo in resume_output["ansible_stdout"].splitlines()[-10:]:
+                                                        print(f"  {lo}")
                         else:
                             if isinstance(output, dict) and first_event and not freeform_mode:
                                 tid = output.get("task_id")

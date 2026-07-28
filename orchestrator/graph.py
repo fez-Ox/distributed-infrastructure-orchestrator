@@ -51,15 +51,21 @@ def create_graphs(checkpointer: MemorySaver, nodes: Any) -> tuple[StateGraph, St
 
     freeform = StateGraph(AgentState)
     freeform.add_node("plan_workflow", nodes.plan_workflow_node)
-    freeform.add_node("execute_workflow", nodes.execute_workflow_node)
+    freeform.add_node("approve_plan", nodes.approve_plan_node)
+    freeform.add_node("execute_step", nodes.execute_step_node)
 
     freeform.set_entry_point("plan_workflow")
     freeform.add_conditional_edges(
         "plan_workflow",
         nodes.route_after_workflow_plan,
-        {"execute_workflow": "execute_workflow", "__end__": END},
+        {"approve_plan": "approve_plan", "__end__": END},
     )
-    freeform.add_edge("execute_workflow", END)
+    freeform.add_edge("approve_plan", "execute_step")
+    freeform.add_conditional_edges(
+        "execute_step",
+        nodes.route_after_step,
+        {"execute_step": "execute_step", "__end__": END},
+    )
 
     freeform_graph = freeform.compile(
         checkpointer=checkpointer,

@@ -276,11 +276,11 @@ def plan_workflow_node(state: AgentState) -> AgentState:
 
 def route_after_workflow_plan(state: AgentState) -> str:
     if state.get("plan"):
-        return "execute_workflow"
+        return "approve_plan"
     return "__end__"
 
 
-def execute_workflow_node(state: AgentState, config: RunnableConfig) -> AgentState:
+def approve_plan_node(state: AgentState, config: RunnableConfig) -> AgentState:
     decision = interrupt("Approve this workflow?")
     if decision != "approve":
         if _db is not None and state.get("plan_id"):
@@ -302,57 +302,74 @@ def execute_workflow_node(state: AgentState, config: RunnableConfig) -> AgentSta
 
     _db.execute("UPDATE plans SET status = 'executing' WHERE plan_id = ?", (plan_id,))
     _db.commit()
+    state["current_step_index"] = 0
+    return state
 
-    rows = _db.execute("SELECT * FROM plan_steps WHERE plan_id = ? ORDER BY step_index", (plan_id,)).fetchall()
-    steps = [dict(r) for r in rows]
 
-    all_stdout: list[str] = []
+def route_after_step(state: AgentState) -> str:
+    plan = state.get("plan")
+    idx = state.get("current_step_index", 0)
+    if plan and idx < len(plan.steps):
+        return "execute_step"
+    return "__end__"
 
-    for step in steps:
-        idx = step["step_index"]
-        playbook_yaml = step["playbook_yaml"]
 
-        from orchestrator.snapshot import parse_hosts_from_playbook as parse_hosts
-        target_nodes = parse_hosts(playbook_yaml)
-        if _snapshot_mgr:
-            for nid in target_nodes:
-                _snapshot_mgr.create("plan_step", (plan_id << 16) | idx, nid)
+def execute_step_node(state: AgentState, config: RunnableConfig) -> AgentState:
+    assert _db is not None
+    plan = state.get("plan")
+    plan_id = state.get("plan_id")
+    idx = state.get("current_step_index", 0)
 
+    if plan is None or plan_id is None or idx >= len(plan.steps):
+        state["error"] = "No more steps to execute"
+        state["status"] = "failed"
+        return state
+
+    step = plan.steps[idx]
+    playbook_yaml = step.playbook
+
+    from orchestrator.snapshot import parse_hosts_from_playbook as parse_hosts
+    target_nodes = parse_hosts(playbook_yaml)
+    if _snapshot_mgr:
+        for nid in target_nodes:
+            _snapshot_mgr.create("plan_step", (plan_id << 16) | idx, nid)
+
+    _db.execute(
+        "UPDATE plan_steps SET status = 'running' WHERE plan_id = ? AND step_index = ?",
+        (plan_id, idx),
+    )
+    _db.commit()
+
+    playbook_path = PLAYBOOK_DIR / f"plan-{plan_id}-step-{idx}.yml"
+    PLAYBOOK_DIR.mkdir(parents=True, exist_ok=True)
+    playbook_path.write_text(playbook_yaml, encoding="utf-8")
+
+    ok, stdout, stderr = ansible_run(playbook_path)
+
+    state["ansible_stdout"] = stdout
+    state["ansible_stderr"] = stderr
+    state["current_step_index"] = idx + 1
+
+    if ok:
         _db.execute(
-            "UPDATE plan_steps SET status = 'running' WHERE plan_id = ? AND step_index = ?",
-            (plan_id, idx),
+            "UPDATE plan_steps SET status = 'succeeded', ansible_stdout = ?, ansible_stderr = ? WHERE plan_id = ? AND step_index = ?",
+            (stdout, stderr, plan_id, idx),
         )
         _db.commit()
-
-        playbook_path = PLAYBOOK_DIR / f"plan-{plan_id}-step-{idx}.yml"
-        PLAYBOOK_DIR.mkdir(parents=True, exist_ok=True)
-        playbook_path.write_text(playbook_yaml, encoding="utf-8")
-
-        ok, stdout, stderr = ansible_run(playbook_path)
-        all_stdout.append(f"Step {idx + 1}/{len(steps)}: {step['description']}\n{stdout}")
-
-        if ok:
-            _db.execute(
-                "UPDATE plan_steps SET status = 'succeeded', ansible_stdout = ?, ansible_stderr = ? WHERE plan_id = ? AND step_index = ?",
-                (stdout, stderr, plan_id, idx),
-            )
+        total = len(plan.steps)
+        if idx + 1 >= total:
+            _db.execute("UPDATE plans SET status = 'completed' WHERE plan_id = ?", (plan_id,))
             _db.commit()
+            state["status"] = "completed"
         else:
-            _db.execute(
-                "UPDATE plan_steps SET status = 'failed', ansible_stdout = ?, ansible_stderr = ?, error = ? WHERE plan_id = ? AND step_index = ?",
-                (stdout, stderr, stderr[:500], plan_id, idx),
-            )
-            _db.execute("UPDATE plans SET status = 'failed' WHERE plan_id = ?", (plan_id,))
-            _db.commit()
-            state["status"] = "failed"
-            state["ansible_stdout"] = "\n".join(all_stdout)
-            state["ansible_stderr"] = stderr
-            state["current_step_index"] = idx
-            return state
+            state["status"] = f"step_{idx + 1}_of_{total}_succeeded"
+    else:
+        _db.execute(
+            "UPDATE plan_steps SET status = 'failed', ansible_stdout = ?, ansible_stderr = ?, error = ? WHERE plan_id = ? AND step_index = ?",
+            (stdout, stderr, stderr[:500], plan_id, idx),
+        )
+        _db.execute("UPDATE plans SET status = 'failed' WHERE plan_id = ?", (plan_id,))
+        _db.commit()
+        state["status"] = "failed"
 
-    _db.execute("UPDATE plans SET status = 'completed' WHERE plan_id = ?", (plan_id,))
-    _db.commit()
-    state["status"] = "completed"
-    state["ansible_stdout"] = "\n".join(all_stdout)
-    state["current_step_index"] = len(steps) - 1
     return state
