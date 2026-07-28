@@ -1,0 +1,35 @@
+- hosts: {{ target }}
+  gather_facts: yes
+  tasks:
+    - name: Create snapshot directory
+      ansible.builtin.file:
+        path: "{{ snapshot_path }}"
+        state: directory
+        mode: '0700'
+
+    - name: Dump package selections (Debian/Ubuntu)
+      ansible.builtin.shell:
+        cmd: dpkg --get-selections > {{ snapshot_path }}/packages.txt
+      when: ansible_os_family == "Debian"
+
+    - name: Dump installed packages (Alpine)
+      ansible.builtin.shell:
+        cmd: apk list -I > {{ snapshot_path }}/packages.txt
+      when: ansible_os_family == "Alpine"
+
+    - name: Dump installed packages (RedHat)
+      ansible.builtin.shell:
+        cmd: rpm -qa > {{ snapshot_path }}/packages.txt
+      when: ansible_os_family == "RedHat"
+
+    - name: Archive /etc
+      ansible.builtin.archive:
+        path: /etc
+        dest: "{{ snapshot_path }}/etc.tar.gz"
+        format: gz
+        mode: '0600'
+
+    - name: Measure snapshot size
+      ansible.builtin.shell:
+        cmd: du -sb {{ snapshot_path }} | cut -f1
+      register: snap_size

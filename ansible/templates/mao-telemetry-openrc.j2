@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+
+name="mao-telemetry-publisher"
+description="Multi-agent orchestration telemetry publisher"
+command="/usr/bin/python3"
+command_args="/opt/mao/node_agent/telemetry_pub.py"
+command_background="yes"
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/mao-telemetry.log"
+error_log="/var/log/mao-telemetry.err"
+
+export NATS_URL="{{ nats_url }}"
+export NODE_ID="{{ inventory_hostname }}"
+export NODE_TYPE="{{ node_type | default('unknown') }}"
+export NODE_ROLE="{{ node_role | default('worker') }}"
+export TELEMETRY_INTERVAL_SECONDS="{{ telemetry_interval_seconds | default(5) }}"
+
+depend() {
+    need net
+}

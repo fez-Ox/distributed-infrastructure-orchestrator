@@ -1,0 +1,10 @@
+---
+- hosts: {{ target }}
+  gather_facts: false
+  tasks:
+    - name: Write config file {{ params.path }}
+      ansible.builtin.copy:
+        dest: "{{ params.path }}"
+        content: |
+{{ params.content | indent(8) }}
+        mode: "{{ params.mode | default('0644') }}"

@@ -1,0 +1,21 @@
+---
+- hosts: {{ target }}
+  gather_facts: false
+  tasks:
+    - name: Add user {{ params.get('username', '') }}
+      ansible.builtin.user:
+        name: "{{ params.get('username', '') }}"
+{% if params.get('groups') %}
+        groups: "{{ params.get('groups') | join(',') }}"
+{% endif %}
+{% if params.get('shell') %}
+        shell: "{{ params.get('shell') }}"
+{% endif %}
+        state: present
+{% if params.get('ssh_key') %}
+    - name: Set authorized key for {{ params.get('username', '') }}
+      ansible.builtin.authorized_key:
+        user: "{{ params.get('username', '') }}"
+        key: "{{ params.get('ssh_key') }}"
+        state: present
+{% endif %}

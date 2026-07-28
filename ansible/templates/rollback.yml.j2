@@ -1,0 +1,38 @@
+- hosts: {{ target }}
+  gather_facts: yes
+  tasks:
+    - name: Check snapshot exists
+      ansible.builtin.stat:
+        path: "{{ snapshot_path }}/etc.tar.gz"
+      register: snap_stat
+
+    - name: Fail if snapshot missing
+      ansible.builtin.fail:
+        msg: "Snapshot not found at {{ snapshot_path }} on {{ inventory_hostname }}"
+      when: not snap_stat.stat.exists
+
+    - name: Restore etc archive
+      ansible.builtin.unarchive:
+        src: "{{ snapshot_path }}/etc.tar.gz"
+        dest: /
+        remote_src: yes
+
+    - name: Restore packages (Debian/Ubuntu)
+      ansible.builtin.shell:
+        cmd: >
+          dpkg --clear-selections
+          && dpkg --set-selections < {{ snapshot_path }}/packages.txt
+          && apt-get dselect-upgrade -y
+      when: ansible_os_family == "Debian"
+
+    - name: Restore packages (Alpine)
+      ansible.builtin.shell:
+        cmd: >
+          apk add --no-cache
+          $(grep -v '^\[' {{ snapshot_path }}/packages.txt | awk '{print $1}')
+      when: ansible_os_family == "Alpine"
+
+    - name: Restore packages (RedHat)
+      ansible.builtin.shell:
+        cmd: yum install -y $(cat {{ snapshot_path }}/packages.txt)
+      when: ansible_os_family == "RedHat"

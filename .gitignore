@@ -1,0 +1,12 @@
+.venv/
+.env
+__pycache__/
+.pytest_cache/
+*.pyc
+data/*.db
+data/*.log
+data/*.pid
+.local/
+ssh-config
+config/inventory.ini
+ansible/inventory.ini

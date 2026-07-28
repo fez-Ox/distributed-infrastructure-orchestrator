@@ -1,0 +1,27 @@
+nodes:
+  - node_id: lxc1
+    hostname: LXC1
+    ip: 192.168.122.238
+    node_type: lxc
+    ansible_user: orchestrator
+    ssh_identity_file: ~/.ssh/id_ed25519
+    enabled: true
+    role: worker
+
+  - node_id: lxc2
+    hostname: LXC2
+    ip: 192.168.122.239
+    node_type: lxc
+    ansible_user: orchestrator
+    ssh_identity_file: ~/.ssh/id_ed25519
+    enabled: true
+    role: worker
+
+  - node_id: vm1
+    hostname: VM1
+    ip: 192.168.122.88
+    node_type: vm
+    ansible_user: orchestrator
+    ssh_identity_file: ~/.ssh/id_ed25519
+    enabled: true
+    role: orchestrator

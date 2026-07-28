@@ -1,0 +1,46 @@
+---
+- name: Install MAO telemetry publisher
+  hosts: lxcs
+  become: true
+  gather_facts: true
+  vars:
+    nats_url: "{{ lookup('env', 'TELEMETRY_NATS_URL') | default('nats://192.168.122.88:4222', true) }}"
+    telemetry_interval_seconds: 5
+  tasks:
+    - name: Ensure application directory exists
+      ansible.builtin.file:
+        path: /opt/mao/node_agent
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy telemetry publisher
+      ansible.builtin.copy:
+        src: ../../node_agent/telemetry_pub.py
+        dest: /opt/mao/node_agent/telemetry_pub.py
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install OpenRC service on Alpine nodes
+      ansible.builtin.template:
+        src: ../templates/mao-telemetry-openrc.j2
+        dest: /etc/init.d/mao-telemetry
+        owner: root
+        group: root
+        mode: "0755"
+      when: ansible_facts.os_family == "Alpine"
+
+    - name: Enable telemetry service on Alpine nodes
+      ansible.builtin.command: rc-update add mao-telemetry default
+      register: rc_update_result
+      changed_when: "'service mao-telemetry added' in rc_update_result.stdout"
+      failed_when: rc_update_result.rc not in [0]
+      when: ansible_facts.os_family == "Alpine"
+
+    - name: Restart telemetry service on Alpine nodes
+      ansible.builtin.service:
+        name: mao-telemetry
+        state: restarted
+      when: ansible_facts.os_family == "Alpine"

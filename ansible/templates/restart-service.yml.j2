@@ -1,0 +1,11 @@
+---
+- hosts: {{ target }}
+  gather_facts: false
+  tasks:
+    - name: Manage service {{ params.service }}
+      ansible.builtin.service:
+        name: "{{ params.service }}"
+        state: "{{ params.state | default('restarted') }}"
+{% if params.enabled is defined and params.enabled is not none %}
+        enabled: "{{ params.enabled | lower }}"
+{% endif %}
