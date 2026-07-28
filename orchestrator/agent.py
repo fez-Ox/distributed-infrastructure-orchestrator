@@ -425,10 +425,14 @@ def main() -> None:
                                             elif status == "completed":
                                                 print(f"  All steps completed.")
                                             elif status == "failed":
-                                                print(f"  Step failed.")
+                                                print(f"  Step failed: {resume_output.get('error', 'unknown error')}")
                                                 stdout = resume_output.get("ansible_stdout", "")
                                                 if stdout:
                                                     for lo in stdout.splitlines()[-5:]:
+                                                        print(f"    {lo}")
+                                                stderr = resume_output.get("ansible_stderr", "")
+                                                if stderr:
+                                                    for lo in stderr.splitlines()[-5:]:
                                                         print(f"    {lo}")
                                             if resume_output.get("status") not in ("", "rejected") and not status.startswith("step_"):
                                                 if resume_output.get("ansible_stdout"):

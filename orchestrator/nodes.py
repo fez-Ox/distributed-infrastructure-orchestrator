@@ -364,6 +364,7 @@ def execute_step_node(state: AgentState, config: RunnableConfig) -> AgentState:
         else:
             state["status"] = f"step_{idx + 1}_of_{total}_succeeded"
     else:
+        state["error"] = stderr or "Ansible execution failed"
         _db.execute(
             "UPDATE plan_steps SET status = 'failed', ansible_stdout = ?, ansible_stderr = ?, error = ? WHERE plan_id = ? AND step_index = ?",
             (stdout, stderr, stderr[:500], plan_id, idx),
