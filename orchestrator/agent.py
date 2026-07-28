@@ -20,7 +20,6 @@ from orchestrator.snapshot import SnapshotManager
 NATS_URL = os.environ.get("NATS_URL", "nats://127.0.0.1:4222")
 
 task_thread_map: dict[int, str] = {}
-plan_thread_map: dict[int, str] = {}
 
 
 def seed_inventory_nodes(conn) -> None:
@@ -82,12 +81,11 @@ def print_help() -> None:
     print("  /nodes           Show registered nodes with latest telemetry")
     print("  /topology        Show cluster topology from LLM perspective")
     print("  /history [n]     Show last n tasks (default 10)")
-    print("  /task <id>       Show task details")
-    print("  /plan <id>       Show plan details with per-step status")
+    print("  /task <id>       Show task details with per-step status")
     print("  /approve <id>    Approve and execute awaiting task")
     print("  /reject <id>     Reject awaiting task")
     print("  /freeform        Toggle freeform mode")
-    print("  /rollback <type> <id>  Rollback a task or plan")
+    print("  /rollback <id>   Rollback all snapshots for a task")
     print("  /snapshot list|free|delete|prune  Manage snapshots")
     print("  /help            This message")
     print("  /exit            Exit")
@@ -105,7 +103,6 @@ def build_initial_state(user_input: str, topology: str, freeform: bool) -> Agent
         "policy_ok": False,
         "syntax_ok": False,
         "plan": None,
-        "plan_id": None,
         "current_step_index": 0,
         "ansible_stdout": "",
         "ansible_stderr": "",
@@ -115,7 +112,7 @@ def build_initial_state(user_input: str, topology: str, freeform: bool) -> Agent
 
 
 def main() -> None:
-    global task_thread_map, plan_thread_map
+    global task_thread_map
     load_dotenv()
     conn = connect()
     init_db(conn)
@@ -204,14 +201,26 @@ def main() -> None:
                     print(f"  Intent:    {d['intent_json']}")
             if d.get("error"):
                 print(f"  Error:     {d['error']}")
-            if d.get("ansible_stdout"):
-                print(f"  Ansible stdout:")
-                for lo in d["ansible_stdout"].splitlines()[-20:]:
-                    print(f"    {lo}")
-            if d.get("ansible_stderr"):
-                print(f"  Ansible stderr:")
-                for lo in d["ansible_stderr"].splitlines()[-20:]:
-                    print(f"    {lo}")
+            steps = conn.execute("SELECT * FROM task_steps WHERE task_id = ? ORDER BY step_index", (task_id,)).fetchall()
+            if steps:
+                print(f"  Steps ({len(steps)}):")
+                for s in steps:
+                    icon = "✓" if s["status"] == "succeeded" else "✗" if s["status"] == "failed" else "○" if s["status"] == "running" else "·"
+                    desc = s.get("description", "") or ""
+                    print(f"    {icon} {s['step_index']+1}: {desc} [{s['status']}]")
+                    if s.get("ansible_stdout"):
+                        for lo in s["ansible_stdout"].splitlines()[-5:]:
+                            print(f"      {lo}")
+                    if s.get("ansible_stderr"):
+                        for lo in s["ansible_stderr"].splitlines()[-5:]:
+                            print(f"      {lo}")
+                    if s.get("error"):
+                        print(f"      Error: {s['error']}")
+            snaps = snapshot_mgr.get_by_task(task_id)
+            if snaps:
+                print(f"  Snapshots ({len(snaps)}):")
+                for s in snaps:
+                    print(f"    #{s['snapshot_id']} {s['node_id']} ({_fmt_size(s.get('size_bytes',0) or 0)}) [{s['status']}]")
         elif line.startswith("/plan "):
             plan_id = int(line.split()[1])
             plan_row = conn.execute("SELECT * FROM plans WHERE plan_id = ?", (plan_id,)).fetchone()
@@ -263,57 +272,40 @@ def main() -> None:
                 print(f"Task #{task_id} rejected directly.")
         elif line.startswith("/rollback "):
             parts = line.split()
-            if len(parts) < 3:
-                print("Usage: /rollback <task|plan> <id>")
+            if len(parts) < 2:
+                print("Usage: /rollback <task_id>")
                 continue
-            rb_type, rb_id = parts[1], int(parts[2])
-            if rb_type == "task":
-                snaps = snapshot_mgr.get_by_task(rb_id)
-                if not snaps:
-                    print(f"No snapshots for task #{rb_id}.")
-                    continue
-                total_size = sum(s.get("size_bytes", 0) or 0 for s in snaps)
-                print(f"Task #{rb_id} — {len(snaps)} snapshot(s), {_fmt_size(total_size)}")
+            task_id = int(parts[1])
+            snaps = snapshot_mgr.get_by_task(task_id)
+            if not snaps:
+                print(f"No snapshots for task #{task_id}.")
+                continue
+            total_size = sum(s.get("size_bytes", 0) or 0 for s in snaps)
+            print(f"Task #{task_id} — {len(snaps)} snapshot(s), {_fmt_size(total_size)}")
+            for s in snaps:
+                print(f"  Snapshot #{s['snapshot_id']}: {s['node_id']} ({_fmt_size(s.get('size_bytes',0) or 0)}) [{s['status']}]")
+            try:
+                choice = input("Approve rollback? (y/N): ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                choice = "n"
+            if choice in ("y", "yes"):
                 for s in snaps:
-                    print(f"  Snapshot #{s['snapshot_id']}: {s['node_id']} ({_fmt_size(s.get('size_bytes',0) or 0)}) [{s['status']}]")
-                try:
-                    choice = input("Approve rollback? (y/N): ").strip().lower()
-                except (EOFError, KeyboardInterrupt):
-                    choice = "n"
-                if choice in ("y", "yes"):
-                    for s in snaps:
-                        if s["status"] != "created":
-                            continue
-                        result = snapshot_mgr.rollback(s["snapshot_id"])
-                        print(f"  {'✓' if result.get('ok') else '✗'} Rolled back {s['node_id']}")
-                else:
-                    print("Rollback cancelled.")
-            elif rb_type == "plan":
-                snaps = snapshot_mgr.get_by_plan(rb_id)
-                if not snaps:
-                    print(f"No snapshots for plan #{rb_id}.")
-                    continue
-                print(f"Plan #{rb_id} — {len(snaps)} snapshot(s) across {len(set(s['node_id'] for s in snaps))} node(s)")
-                for encoded in sorted(set(s["source_id"] for s in snaps), reverse=True):
-                    for s in [x for x in snaps if x["source_id"] == encoded]:
-                        print(f"  Snapshot #{s['snapshot_id']}: {s['node_id']} (step {(encoded & 0xFFFF) + 1}) ({_fmt_size(s.get('size_bytes',0) or 0)}) [{s['status']}]")
-                try:
-                    choice = input("Approve rollback of entire plan? (y/N): ").strip().lower()
-                except (EOFError, KeyboardInterrupt):
-                    choice = "n"
-                if choice in ("y", "yes"):
-                    for encoded in sorted(set(s["source_id"] for s in snaps), reverse=True):
-                        for s in [x for x in snaps if x["source_id"] == encoded]:
-                            if s["status"] != "created":
-                                continue
-                            result = snapshot_mgr.rollback(s["snapshot_id"])
-                            print(f"  {'✓' if result.get('ok') else '✗'} Rolled back {s['node_id']}")
-                else:
-                    print("Rollback cancelled.")
+                    if s["status"] != "created":
+                        continue
+                    result = snapshot_mgr.rollback(s["snapshot_id"])
+                    print(f"  {'✓' if result.get('ok') else '✗'} Rolled back {s['node_id']}")
+            else:
+                print("Rollback cancelled.")
         elif line.startswith("/snapshot list"):
             for s in snapshot_mgr.get_all():
-                source = f"{s['source_type']} #{s['source_id']}"
-                print(f"  {s['snapshot_id']:5d} {s['node_id']:8s} {source:18s} {(s.get('created_at','') or '?')[:16]:12s} {_fmt_size(s.get('size_bytes',0) or 0):>8s} {s['status']:14s}")
+                task_req = ""
+                task_id = s.get("task_id")
+                if task_id:
+                    tr = conn.execute("SELECT user_request FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+                    if tr:
+                        task_req = tr["user_request"][:30]
+                req_str = f" #{task_id} {task_req}" if task_id else ""
+                print(f"  {s['snapshot_id']:5d} {s['node_id']:8s}{req_str:40s} {(s.get('created_at','') or '?')[:16]:12s} {_fmt_size(s.get('size_bytes',0) or 0):>8s} {s['status']:14s}")
         elif line == "/snapshot free":
             total = 0
             for s in snapshot_mgr.get_node_summary():
@@ -369,9 +361,6 @@ def main() -> None:
                                 print(f"  Plan: {plan.description}")
                                 for i, step in enumerate(plan.steps):
                                     print(f"    {i+1}/{len(plan.steps)}: {step.description}")
-                                pid = state_vals.get("plan_id")
-                                if pid:
-                                    plan_thread_map[pid] = thread_id
                             elif playbook_path:
                                 print(f"  Playbook: {playbook_path}")
                                 print(f"  Syntax check: OK")
@@ -397,13 +386,9 @@ def main() -> None:
                             resume_val = "approve" if choice in ("y", "yes") else "reject"
 
                             if resume_val == "reject":
-                                pid = state_vals.get("plan_id")
-                                if pid:
-                                    conn.execute("UPDATE plan_steps SET status = 'skipped' WHERE plan_id = ? AND status = 'pending'", (pid,))
-                                    conn.execute("UPDATE plans SET status = 'failed' WHERE plan_id = ?", (pid,))
-                                    conn.commit()
                                 if task_id:
-                                    conn.execute("UPDATE tasks SET status = ? WHERE task_id = ?", ("rejected", task_id))
+                                    conn.execute("UPDATE task_steps SET status = 'skipped' WHERE task_id = ? AND status = 'pending'", (task_id,))
+                                    conn.execute("UPDATE tasks SET status = 'rejected' WHERE task_id = ?", (task_id,))
                                     conn.commit()
 
                             for resume_event in current_graph.stream(Command(resume=resume_val), config):
@@ -414,10 +399,10 @@ def main() -> None:
                                             if status == "rejected":
                                                 print(f"  Workflow rejected.")
                                             elif status.startswith("step_"):
-                                                plan = state_vals.get("plan")
+                                                steps_res = conn.execute("SELECT description FROM task_steps WHERE task_id = ? ORDER BY step_index", (task_id,)).fetchall() if task_id else []
                                                 idx = resume_output.get("current_step_index", 0)
-                                                desc = plan.steps[idx - 1].description if plan and idx else ""
-                                                print(f"  Step {idx} of {len(plan.steps) if plan else '?'}: {desc}")
+                                                desc = steps_res[idx - 1]["description"] if steps_res and idx <= len(steps_res) else ""
+                                                print(f"  Step {idx} of {len(steps_res)}: {desc}")
                                                 stdout = resume_output.get("ansible_stdout", "")
                                                 if stdout:
                                                     for lo in stdout.splitlines()[-5:]:

@@ -13,7 +13,7 @@ from langgraph.types import Command, interrupt
 
 from orchestrator.db import connect
 from orchestrator.executor import ansible_run, syntax_check
-from orchestrator.models import ActionType, AgentState, Intent, NodeSelector, Plan, TaskStatus, WorkflowStep
+from orchestrator.models import ActionType, AgentState, Intent, NodeSelector, Plan, TaskStatus, TaskType, WorkflowStep
 from orchestrator.policy import PolicyEngine
 from orchestrator.prompts import SYSTEM_PROMPT, FREEFORM_WORKFLOW_PROMPT
 from orchestrator.renderer import render_playbook
@@ -55,14 +55,19 @@ def init_nodes(
         ).with_structured_output(Plan, method="json_mode")
 
 
-def _create_task(user_request: str, intent: Intent) -> int:
+def _create_template_task(user_request: str, intent: Intent) -> int:
     assert _db is not None
     cursor = _db.execute(
-        "INSERT INTO tasks (user_request, intent_json, target_node_id, status) VALUES (?, ?, ?, ?)",
-        (user_request, intent.model_dump_json(), intent.target.node_id or intent.target.group or "", TaskStatus.pending.value),
+        "INSERT INTO tasks (user_request, task_type, intent_json, target_node_id, status) VALUES (?, ?, ?, ?, ?)",
+        (user_request, TaskType.template.value, intent.model_dump_json(), intent.target.node_id or intent.target.group or "", TaskStatus.pending.value),
+    )
+    task_id = cursor.lastrowid
+    _db.execute(
+        "INSERT INTO task_steps (task_id, step_index, description, playbook_yaml, status) VALUES (?, ?, ?, ?, ?)",
+        (task_id, 0, intent.reason, "", TaskStatus.pending.value),
     )
     _db.commit()
-    return cursor.lastrowid
+    return task_id
 
 
 def _transition(task_id: int, status: TaskStatus, error: Optional[str] = None) -> None:
@@ -72,9 +77,12 @@ def _transition(task_id: int, status: TaskStatus, error: Optional[str] = None) -
     _db.commit()
 
 
-def _set_ansible_output(task_id: int, stdout: str, stderr: str) -> None:
+def _update_step(task_id: int, step_index: int, **kwargs: Any) -> None:
     assert _db is not None
-    _db.execute("UPDATE tasks SET ansible_stdout = ?, ansible_stderr = ?, updated_at = ? WHERE task_id = ?", (stdout, stderr, datetime.now(timezone.utc).isoformat(), task_id))
+    now = datetime.now(timezone.utc).isoformat()
+    sets = ", ".join(f"{k} = ?" for k in kwargs)
+    vals = list(kwargs.values()) + [now, task_id, step_index]
+    _db.execute(f"UPDATE task_steps SET {sets}, updated_at = ? WHERE task_id = ? AND step_index = ?", vals)
     _db.commit()
 
 
@@ -103,7 +111,7 @@ def plan_node(state: AgentState) -> AgentState:
                 reason=f"Fallback: LLM error: {e}",
             )
 
-    task_id = _create_task(user_input, intent)
+    task_id = _create_template_task(user_input, intent)
     _transition(task_id, TaskStatus.planning)
 
     state["intent"] = intent
@@ -150,6 +158,7 @@ def render_node(state: AgentState) -> AgentState:
         path = PLAYBOOK_DIR / f"task-{task_id}.yml"
         path.write_text(playbook_yaml, encoding="utf-8")
         state["playbook_path"] = str(path)
+        _update_step(task_id, 0, playbook_yaml=playbook_yaml, playbook_path=str(path))
     except Exception as e:
         state["error"] = str(e)
         _transition(task_id, TaskStatus.failed, error=str(e))
@@ -172,7 +181,7 @@ def syntax_check_node(state: AgentState) -> AgentState:
             _transition(task_id, TaskStatus.awaiting_approval)
         else:
             _transition(task_id, TaskStatus.failed, error="syntax check failed")
-            _set_ansible_output(task_id, stdout, stderr)
+            _update_step(task_id, 0, ansible_stdout=stdout, ansible_stderr=stderr)
     except Exception as e:
         state["syntax_ok"] = False
         state["error"] = str(e)
@@ -205,11 +214,12 @@ def execute_node(state: AgentState, config: RunnableConfig) -> AgentState:
     if _snapshot_mgr:
         target_nodes = resolve_target(target_str)
         for nid in target_nodes:
-            _snapshot_mgr.create("task", task_id, nid)
+            _snapshot_mgr.create(task_id=task_id, node_id=nid, step_id=0)
 
     _transition(task_id, TaskStatus.running)
+    _update_step(task_id, 0, status=TaskStatus.running.value)
     ok, stdout, stderr = ansible_run(Path(playbook_path))
-    _set_ansible_output(task_id, stdout, stderr)
+    _update_step(task_id, 0, ansible_stdout=stdout, ansible_stderr=stderr, status=TaskStatus.succeeded.value if ok else TaskStatus.failed.value)
 
     if ok:
         _transition(task_id, TaskStatus.verifying)
@@ -257,19 +267,19 @@ def plan_workflow_node(state: AgentState) -> AgentState:
         )
 
     cursor = _db.execute(
-        "INSERT INTO plans (description, user_request, status) VALUES (?, ?, ?)",
-        (plan.description, user_input, "planning"),
+        "INSERT INTO tasks (user_request, task_type, plan_json, target_node_id, status) VALUES (?, ?, ?, ?, ?)",
+        (user_input, TaskType.freeform.value, plan.model_dump_json(), "", "planning"),
     )
-    plan_id = cursor.lastrowid
+    task_id = cursor.lastrowid
     for i, step in enumerate(plan.steps):
         _db.execute(
-            "INSERT INTO plan_steps (plan_id, step_index, description, playbook_yaml, verification_command, status) VALUES (?, ?, ?, ?, ?, ?)",
-            (plan_id, i, step.description, step.playbook, step.verification, "pending"),
+            "INSERT INTO task_steps (task_id, step_index, description, playbook_yaml, status) VALUES (?, ?, ?, ?, ?)",
+            (task_id, i, step.description, step.playbook, "pending"),
         )
     _db.commit()
 
     state["plan"] = plan
-    state["plan_id"] = plan_id
+    state["task_id"] = task_id
     state["current_step_index"] = 0
     return state
 
@@ -283,25 +293,23 @@ def route_after_workflow_plan(state: AgentState) -> str:
 def approve_plan_node(state: AgentState, config: RunnableConfig) -> AgentState:
     decision = interrupt("Approve this workflow?")
     if decision != "approve":
-        if _db is not None and state.get("plan_id"):
+        if _db is not None and state.get("task_id"):
             _db.execute(
-                "UPDATE plan_steps SET status = 'skipped' WHERE plan_id = ? AND status = 'pending'",
-                (state["plan_id"],),
+                "UPDATE task_steps SET status = 'skipped' WHERE task_id = ? AND status = 'pending'",
+                (state["task_id"],),
             )
-            _db.execute("UPDATE plans SET status = 'failed' WHERE plan_id = ?", (state["plan_id"],))
-            _db.commit()
+            _transition(state["task_id"], TaskStatus.rejected)
         state["status"] = "rejected"
         return state
 
     assert _db is not None
-    plan_id = state.get("plan_id")
-    if plan_id is None:
-        state["error"] = "Missing plan_id"
+    task_id = state.get("task_id")
+    if task_id is None:
+        state["error"] = "Missing task_id"
         state["status"] = "failed"
         return state
 
-    _db.execute("UPDATE plans SET status = 'executing' WHERE plan_id = ?", (plan_id,))
-    _db.commit()
+    _transition(task_id, TaskStatus.running)
     state["current_step_index"] = 0
     return state
 
@@ -317,10 +325,10 @@ def route_after_step(state: AgentState) -> str:
 def execute_step_node(state: AgentState, config: RunnableConfig) -> AgentState:
     assert _db is not None
     plan = state.get("plan")
-    plan_id = state.get("plan_id")
+    task_id = state.get("task_id")
     idx = state.get("current_step_index", 0)
 
-    if plan is None or plan_id is None or idx >= len(plan.steps):
+    if plan is None or task_id is None or idx >= len(plan.steps):
         state["error"] = "No more steps to execute"
         state["status"] = "failed"
         return state
@@ -332,15 +340,11 @@ def execute_step_node(state: AgentState, config: RunnableConfig) -> AgentState:
     target_nodes = parse_hosts(playbook_yaml)
     if _snapshot_mgr:
         for nid in target_nodes:
-            _snapshot_mgr.create("plan_step", (plan_id << 16) | idx, nid)
+            _snapshot_mgr.create(task_id=task_id, node_id=nid, step_id=idx)
 
-    _db.execute(
-        "UPDATE plan_steps SET status = 'running' WHERE plan_id = ? AND step_index = ?",
-        (plan_id, idx),
-    )
-    _db.commit()
+    _update_step(task_id, idx, status=TaskStatus.running.value)
 
-    playbook_path = PLAYBOOK_DIR / f"plan-{plan_id}-step-{idx}.yml"
+    playbook_path = PLAYBOOK_DIR / f"task-{task_id}-step-{idx}.yml"
     PLAYBOOK_DIR.mkdir(parents=True, exist_ok=True)
     playbook_path.write_text(playbook_yaml, encoding="utf-8")
 
@@ -351,26 +355,17 @@ def execute_step_node(state: AgentState, config: RunnableConfig) -> AgentState:
     state["current_step_index"] = idx + 1
 
     if ok:
-        _db.execute(
-            "UPDATE plan_steps SET status = 'succeeded', ansible_stdout = ?, ansible_stderr = ? WHERE plan_id = ? AND step_index = ?",
-            (stdout, stderr, plan_id, idx),
-        )
-        _db.commit()
+        _update_step(task_id, idx, status=TaskStatus.succeeded.value, ansible_stdout=stdout, ansible_stderr=stderr)
         total = len(plan.steps)
         if idx + 1 >= total:
-            _db.execute("UPDATE plans SET status = 'completed' WHERE plan_id = ?", (plan_id,))
-            _db.commit()
+            _transition(task_id, TaskStatus.succeeded)
             state["status"] = "completed"
         else:
             state["status"] = f"step_{idx + 1}_of_{total}_succeeded"
     else:
         state["error"] = stderr or "Ansible execution failed"
-        _db.execute(
-            "UPDATE plan_steps SET status = 'failed', ansible_stdout = ?, ansible_stderr = ?, error = ? WHERE plan_id = ? AND step_index = ?",
-            (stdout, stderr, stderr[:500], plan_id, idx),
-        )
-        _db.execute("UPDATE plans SET status = 'failed' WHERE plan_id = ?", (plan_id,))
-        _db.commit()
+        _update_step(task_id, idx, status=TaskStatus.failed.value, ansible_stdout=stdout, ansible_stderr=stderr, error=stderr[:500] if stderr else None)
+        _transition(task_id, TaskStatus.failed, error=stderr[:500] if stderr else None)
         state["status"] = "failed"
 
     return state

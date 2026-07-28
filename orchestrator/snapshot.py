@@ -131,14 +131,14 @@ class SnapshotManager:
     def __init__(self, db: sqlite3.Connection | None = None) -> None:
         self.db = db or connect()
 
-    def create(self, source_type: str, source_id: int, node_id: str) -> int:
+    def create(self, task_id: int, node_id: str, step_id: int | None = None) -> int:
         target_host = node_id
         results = _resolve_targets([node_id])
         if results:
             target_host = results[0]["ansible_host"]
         cursor = self.db.execute(
-            "INSERT INTO snapshots (source_type, source_id, node_id, target_host, snapshot_path, status) VALUES (?, ?, ?, ?, ?, 'created')",
-            (source_type, source_id, node_id, target_host, ""),
+            "INSERT INTO snapshots (task_id, step_id, node_id, target_host, snapshot_path, status) VALUES (?, ?, ?, ?, ?, 'created')",
+            (task_id, step_id, node_id, target_host, ""),
         )
         snapshot_id = cursor.lastrowid
         snapshot_path = f"{SNAPSHOT_DIR_BASE}/{snapshot_id}"
@@ -213,15 +213,8 @@ class SnapshotManager:
 
     def get_by_task(self, task_id: int) -> list[dict[str, Any]]:
         rows = self.db.execute(
-            "SELECT * FROM snapshots WHERE source_type = 'task' AND source_id = ? ORDER BY snapshot_id",
+            "SELECT * FROM snapshots WHERE task_id = ? ORDER BY snapshot_id",
             (task_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-    def get_by_plan(self, plan_id: int) -> list[dict[str, Any]]:
-        rows = self.db.execute(
-            "SELECT * FROM snapshots WHERE source_type = 'plan_step' AND (source_id >> 16) = ? ORDER BY source_id",
-            (plan_id,),
         ).fetchall()
         return [dict(r) for r in rows]
 

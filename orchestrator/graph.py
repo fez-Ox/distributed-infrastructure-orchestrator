@@ -15,8 +15,7 @@ ALLOWED_TYPES = [
     ("orchestrator.models", "WorkflowStep"),
     ("orchestrator.models", "NodeSelector"),
     ("orchestrator.models", "TaskStatus"),
-    ("orchestrator.models", "PlanStatus"),
-    ("orchestrator.models", "StepStatus"),
+    ("orchestrator.models", "TaskType"),
 ]
 
 

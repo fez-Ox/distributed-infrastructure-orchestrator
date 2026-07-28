@@ -320,7 +320,7 @@ class TestNodes:
             freeform_mode=False,
             intent=None, task_id=None, task_target="",
             playbook_path=None, policy_ok=False, syntax_ok=False,
-            plan=None, plan_id=None, current_step_index=0,
+            plan=None, current_step_index=0,
             ansible_stdout="", ansible_stderr="", error=None, status="",
         )
         state = plan_node(state)
@@ -431,7 +431,7 @@ class TestNodes:
             "freeform_mode": False,
             "intent": None, "task_id": None, "task_target": "",
             "playbook_path": None, "policy_ok": False, "syntax_ok": False,
-            "plan": None, "plan_id": None, "current_step_index": 0,
+            "plan": None, "current_step_index": 0,
             "ansible_stdout": "", "ansible_stderr": "", "error": None, "status": "",
         }
 
@@ -460,7 +460,7 @@ class TestPlanner:
             "freeform_mode": False,
             "intent": None, "task_id": None, "task_target": "",
             "playbook_path": None, "policy_ok": False, "syntax_ok": False,
-            "plan": None, "plan_id": None, "current_step_index": 0,
+            "plan": None, "current_step_index": 0,
             "ansible_stdout": "", "ansible_stderr": "", "error": None, "status": "",
         }
         result = plan_node(state)

@@ -54,48 +54,37 @@ def init_db(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS tasks (
             task_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_request TEXT,
+            user_request TEXT NOT NULL,
+            task_type TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
             intent_json TEXT,
+            plan_json TEXT,
             target_node_id TEXT,
-            status TEXT NOT NULL,
-            approval_required INTEGER NOT NULL DEFAULT 1,
-            approved_at TEXT,
-            ansible_stdout TEXT,
-            ansible_stderr TEXT,
             error TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE IF NOT EXISTS plans (
-            plan_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            description TEXT NOT NULL,
-            user_request TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'planning',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS plan_steps (
-            plan_id INTEGER NOT NULL,
+        CREATE TABLE IF NOT EXISTS task_steps (
+            task_id INTEGER NOT NULL,
             step_index INTEGER NOT NULL,
             description TEXT NOT NULL,
             playbook_yaml TEXT NOT NULL,
-            verification_command TEXT,
+            playbook_path TEXT,
             status TEXT NOT NULL DEFAULT 'pending',
             ansible_stdout TEXT,
             ansible_stderr TEXT,
             error TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (plan_id, step_index),
-            FOREIGN KEY (plan_id) REFERENCES plans(plan_id)
+            PRIMARY KEY (task_id, step_index),
+            FOREIGN KEY (task_id) REFERENCES tasks(task_id)
         );
 
         CREATE TABLE IF NOT EXISTS snapshots (
             snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_type TEXT NOT NULL,
-            source_id INTEGER NOT NULL,
+            task_id INTEGER NOT NULL,
+            step_id INTEGER,
             node_id TEXT NOT NULL,
             target_host TEXT NOT NULL,
             snapshot_path TEXT NOT NULL,
@@ -104,7 +93,8 @@ def init_db(conn: sqlite3.Connection) -> None:
             status TEXT NOT NULL DEFAULT 'created',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             rolled_back_at TEXT,
-            deleted_at TEXT
+            deleted_at TEXT,
+            FOREIGN KEY (task_id) REFERENCES tasks(task_id)
         );
         """
     )

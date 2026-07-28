@@ -7,6 +7,11 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 
+class TaskType(str, Enum):
+    template = "template"
+    freeform = "freeform"
+
+
 class ActionType(str, Enum):
     install_pkg = "install-pkg"
     update_system = "update-system"
