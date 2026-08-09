@@ -1,0 +1,15 @@
+[Unit]
+Description=Multi-agent orchestration child agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mao
+EnvironmentFile=/opt/mao/.env
+ExecStart=/opt/mao/.venv/bin/python -m node_agent.child_agent
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

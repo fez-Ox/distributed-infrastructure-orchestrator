@@ -1,16 +1,18 @@
 ---
 - hosts: {{ target }}
   gather_facts: true
+  become: yes
   tasks:
     - name: Update all packages (apt)
       ansible.builtin.apt:
         upgrade: dist
         update_cache: yes
-      when: ansible_pkg_mgr == 'apt'
+      when: ansible_facts['pkg_mgr'] == 'apt' or ansible_pkg_mgr == 'apt'
 
     - name: Update all packages (apk)
-      ansible.builtin.command:
-        cmd: apk upgrade --available
-      register: apk_result
-      changed_when: '"Upgrading" in apk_result.stdout'
-      when: ansible_pkg_mgr == 'apk'
+      community.general.apk:
+        upgrade: yes
+        update_cache: yes
+      when: ansible_facts['pkg_mgr'] == 'apk' or ansible_pkg_mgr == 'apk'
+
+

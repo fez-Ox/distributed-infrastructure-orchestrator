@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
+from orchestrator.child_bridge import ChildBridge
 from orchestrator.db import connect, init_db
 from orchestrator.graph import create_graphs
 from orchestrator.models import AgentState
@@ -18,8 +19,70 @@ from orchestrator.prompts import build_topology_context
 from orchestrator.snapshot import SnapshotManager
 
 NATS_URL = os.environ.get("NATS_URL", "nats://127.0.0.1:4222")
+ORCHESTRATOR_NODE_ID = os.environ.get("ORCHESTRATOR_NODE_ID", "vm1")
 
 task_thread_map: dict[int, str] = {}
+
+INSPECT_KEYWORDS = [
+    "status of", "is", "running", "disk", "storage", "free space",
+    "log", "capabilities", "readiness", "capacity", "health", "check",
+]
+
+MUTATION_KEYWORDS = [
+    "install", "remove", "update", "write", "add ", "restart",
+    "stop ", "start ", "delete", "create", "deploy", "config",
+]
+
+
+def detect_child_delegate(line: str, valid_node_ids: set[str]) -> tuple[str, str] | None:
+    """Detect an inspection request targeted at a single node."""
+    text = line.lower()
+    if any(m in text for m in MUTATION_KEYWORDS):
+        return None
+    if not any(k in text for k in INSPECT_KEYWORDS):
+        return None
+    for node_id in sorted(valid_node_ids, key=len, reverse=True):
+        if node_id in text:
+            return (node_id, line)
+    return None
+
+
+def _delegate_flow(conn, bridge: ChildBridge, node_id: str, request: str) -> None:
+    from orchestrator.nodes import create_child_task, plan_child_intent
+
+    intent = plan_child_intent(request, node_id)
+    if intent is None:
+        print(f"  Could not plan a child action for: {request}")
+        return
+    print(f"  Delegating to {node_id}: {intent.action.value}")
+    print(f"  Params: {json.dumps(intent.params, default=str)}")
+    print(f"  Reason: {intent.reason}")
+    try:
+        choice = input("  Approve delegation? (y/N): ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        choice = "n"
+    if choice not in ("y", "yes"):
+        print("  Delegation cancelled.")
+        return
+    task_id = create_child_task(conn, node_id, request, intent)
+    print(f"  Task #{task_id} -> agent.{node_id}.tasks.request")
+    if not bridge.is_connected():
+        print(f"  Child bridge is not connected to NATS. Task #{task_id} remains pending; "
+              f"start NATS and retry with /delegate.")
+        return
+    bridge.send_task(node_id, task_id, intent.model_dump_json())
+    result = bridge.wait_for_result(task_id, timeout=120)
+    if result is None:
+        print(f"  No result within 120s (check /task {task_id} or /agents).")
+        return
+    status = result.get("status", "")
+    print(f"  Result: {'OK' if result.get('ok') else 'FAILED'} ({status})")
+    stdout = result.get("stdout") or ""
+    if stdout:
+        for lo in stdout.splitlines()[-8:]:
+            print(f"    {lo}")
+    if result.get("error"):
+        print(f"    Error: {result['error']}")
 
 
 def seed_inventory_nodes(conn) -> None:
@@ -46,9 +109,10 @@ def seed_inventory_nodes(conn) -> None:
                 if "=" in token:
                     k, _, v = token.partition("=")
                     kwargs[k] = v
+            enabled = 1 if current_section == "managed_nodes" else 0
             conn.execute(
-                "INSERT OR IGNORE INTO nodes (node_id, hostname, ip, node_type, role, enabled) VALUES (?, ?, ?, ?, ?, 0)",
-                (hostname, hostname, kwargs.get("ansible_host", ""), kwargs.get("node_type", "unknown"), kwargs.get("role", "worker")),
+                "INSERT OR IGNORE INTO nodes (node_id, hostname, ip, node_type, role, enabled) VALUES (?, ?, ?, ?, ?, ?)",
+                (hostname, hostname, kwargs.get("ansible_host", ""), kwargs.get("node_type", "unknown"), kwargs.get("role", "worker"), enabled),
             )
     conn.commit()
 
@@ -87,6 +151,9 @@ def print_help() -> None:
     print("  /freeform        Toggle freeform mode")
     print("  /rollback <id>   Rollback all snapshots for a task")
     print("  /snapshot list|free|delete|prune  Manage snapshots")
+    print("  /agents          List nodes with child-agent presence")
+    print("  /capabilities <node_id>  Show reported child-agent capabilities")
+    print("  /delegate <node_id> <request>  Run an inspection task on a child agent")
     print("  /help            This message")
     print("  /exit            Exit")
 
@@ -108,6 +175,7 @@ def build_initial_state(user_input: str, topology: str, freeform: bool) -> Agent
         "ansible_stderr": "",
         "error": None,
         "status": "",
+        "authorization_ok": False,
     }
 
 
@@ -125,13 +193,28 @@ def main() -> None:
     model = os.environ.get("LLM_MODEL", "gemini/gemma-4-31b-it")
     nodes.init_nodes(conn, valid_node_ids, api_key, model)
 
+    nats_url = os.environ.get("NATS_URL", NATS_URL)
+    auth_secret = os.environ.get("CHILD_AUTH_SECRET", "")
+    bridge = ChildBridge(
+        nats_url,
+        auth_secret,
+        nats_user=os.environ.get("NATS_USER", ""),
+        nats_password=os.environ.get("NATS_PASSWORD", ""),
+        nats_creds_file=os.environ.get("NATS_CREDS_FILE", ""),
+        source_node_id=os.environ.get("ORCHESTRATOR_NODE_ID", ORCHESTRATOR_NODE_ID),
+    )
+    bridge.start()
+
     checkpointer = MemorySaver()
     template_graph, freeform_graph = create_graphs(checkpointer, nodes)
 
-    print(f"Connected to {NATS_URL}")
+    print(f"Connected to {nats_url}")
     print()
     if not api_key:
         print("Note: No LLM API key found. Planner will use fallback mode.")
+        print()
+    if not auth_secret:
+        print("Note: No CHILD_AUTH_SECRET set. Child delegation will be rejected by agents.")
         print()
 
     print_help()
@@ -205,6 +288,7 @@ def main() -> None:
             if steps:
                 print(f"  Steps ({len(steps)}):")
                 for s in steps:
+                    s = dict(s)
                     icon = "✓" if s["status"] == "succeeded" else "✗" if s["status"] == "failed" else "○" if s["status"] == "running" else "·"
                     desc = s.get("description", "") or ""
                     print(f"    {icon} {s['step_index']+1}: {desc} [{s['status']}]")
@@ -276,24 +360,34 @@ def main() -> None:
                 print("Usage: /rollback <task_id>")
                 continue
             task_id = int(parts[1])
+            succeeded_steps = conn.execute("SELECT step_index, description FROM task_steps WHERE task_id = ? AND status = 'succeeded' ORDER BY step_index DESC", (task_id,)).fetchall()
             snaps = snapshot_mgr.get_by_task(task_id)
-            if not snaps:
-                print(f"No snapshots for task #{task_id}.")
+            if not succeeded_steps and not snaps:
+                print(f"No succeeded steps or snapshots available for rollback on task #{task_id}.")
                 continue
-            total_size = sum(s.get("size_bytes", 0) or 0 for s in snaps)
-            print(f"Task #{task_id} — {len(snaps)} snapshot(s), {_fmt_size(total_size)}")
-            for s in snaps:
-                print(f"  Snapshot #{s['snapshot_id']}: {s['node_id']} ({_fmt_size(s.get('size_bytes',0) or 0)}) [{s['status']}]")
+            if succeeded_steps:
+                print(f"Task #{task_id} — {len(succeeded_steps)} workflow step(s) to undo:")
+                for s in succeeded_steps:
+                    print(f"  - Step {s['step_index']+1}: {s['description']}")
+            if snaps:
+                total_size = sum(s.get("size_bytes", 0) or 0 for s in snaps)
+                print(f"Task #{task_id} — {len(snaps)} snapshot(s), {_fmt_size(total_size)}")
+                for s in snaps:
+                    print(f"  Snapshot #{s['snapshot_id']}: {s['node_id']} ({_fmt_size(s.get('size_bytes',0) or 0)}) [{s['status']}]")
             try:
-                choice = input("Approve rollback? (y/N): ").strip().lower()
+                choice = input("Approve rollback execution? (y/N): ").strip().lower()
             except (EOFError, KeyboardInterrupt):
                 choice = "n"
             if choice in ("y", "yes"):
-                for s in snaps:
-                    if s["status"] != "created":
-                        continue
-                    result = snapshot_mgr.rollback(s["snapshot_id"])
-                    print(f"  {'✓' if result.get('ok') else '✗'} Rolled back {s['node_id']}")
+                if succeeded_steps:
+                    ok_rb, msg_rb = nodes.rollback_workflow_task(conn, task_id)
+                    print(f"  Workflow rollback {'succeeded' if ok_rb else 'failed'}: {msg_rb}")
+                if snaps:
+                    for s in snaps:
+                        if s["status"] != "created":
+                            continue
+                        result = snapshot_mgr.rollback(s["snapshot_id"])
+                        print(f"  {'✓' if result.get('ok') else '✗'} Rolled back snapshot {s['node_id']}")
             else:
                 print("Rollback cancelled.")
         elif line.startswith("/snapshot list"):
@@ -328,7 +422,54 @@ def main() -> None:
                 continue
             result = snapshot_mgr.prune(int(parts[2]))
             print(f"  Deleted {result['deleted']} snapshot(s) older than {parts[2]} day(s).")
+        elif line == "/agents":
+            rows = [dict(r) for r in conn.execute(
+                "SELECT node_id, agent_status, agent_version, agent_last_heartbeat, agent_capabilities FROM nodes ORDER BY node_id"
+            ).fetchall()]
+            active = False
+            for n in rows:
+                if not (n.get("agent_status") or n.get("agent_version") or n.get("agent_last_heartbeat") or n.get("agent_capabilities")):
+                    continue
+                active = True
+                print(f"  {n['node_id']:8s} status={str(n.get('agent_status') or '?'):8s} v={str(n.get('agent_version') or '?'):8s} hb={str(n.get('agent_last_heartbeat') or '?')[:19]}")
+                caps = n.get("agent_capabilities")
+                if caps:
+                    try:
+                        c = json.loads(caps)
+                        print(f"      os={c.get('os_family')} pkg={c.get('package_manager')} init={c.get('init_system')} actions={','.join(c.get('local_actions') or [])}")
+                    except Exception:
+                        pass
+            if not active:
+                print("  No child agents have reported yet.")
+        elif line.startswith("/capabilities "):
+            node_id = line.split()[1]
+            row = conn.execute("SELECT agent_capabilities FROM nodes WHERE node_id = ?", (node_id,)).fetchone()
+            if not row or not row["agent_capabilities"]:
+                print(f"  No capabilities reported for {node_id}.")
+            else:
+                try:
+                    print(json.dumps(json.loads(row["agent_capabilities"]), indent=2))
+                except Exception:
+                    print(row["agent_capabilities"])
+        elif line.startswith("/delegate "):
+            parts = line.split(maxsplit=2)
+            node_id = parts[1]
+            request = parts[2] if len(parts) > 2 else ""
+            if not request:
+                print("Usage: /delegate <node_id> <request>")
+                continue
+            row = conn.execute("SELECT node_id FROM nodes WHERE node_id = ?", (node_id,)).fetchone()
+            if not row:
+                print(f"  Unknown node: {node_id}")
+                continue
+            _delegate_flow(conn, bridge, node_id, request)
         else:
+            routed = detect_child_delegate(line, valid_node_ids)
+            if routed:
+                node_id, request = routed
+                print(f"Routing inspection request to child agent on {node_id}: {request}")
+                _delegate_flow(conn, bridge, node_id, request)
+                continue
             session_counter += 1
             thread_id = f"sess-{session_counter}"
             config = {"configurable": {"thread_id": thread_id}}
@@ -419,6 +560,19 @@ def main() -> None:
                                                 if stderr:
                                                     for lo in stderr.splitlines()[-5:]:
                                                         print(f"    {lo}")
+                                                if task_id:
+                                                    succeeded_steps = conn.execute("SELECT step_index, description FROM task_steps WHERE task_id = ? AND status = 'succeeded' ORDER BY step_index DESC", (task_id,)).fetchall()
+                                                    if succeeded_steps:
+                                                        print(f"\n  A rollback plan is available ({len(succeeded_steps)} succeeded step(s) to undo):")
+                                                        for s in succeeded_steps:
+                                                            print(f"    - Step {s['step_index']+1}: {s['description']}")
+                                                        try:
+                                                            rb_choice = input("  Execute rollback plan? (y/N): ").strip().lower()
+                                                        except (EOFError, KeyboardInterrupt):
+                                                            rb_choice = "n"
+                                                        if rb_choice in ("y", "yes"):
+                                                            ok_rb, msg_rb = nodes.rollback_workflow_task(conn, task_id)
+                                                            print(f"  Rollback {'succeeded' if ok_rb else 'failed'}: {msg_rb}")
                                             if resume_output.get("status") not in ("", "rejected") and not status.startswith("step_"):
                                                 if resume_output.get("ansible_stdout"):
                                                     for lo in resume_output["ansible_stdout"].splitlines()[-10:]:

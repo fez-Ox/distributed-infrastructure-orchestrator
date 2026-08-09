@@ -1,12 +1,27 @@
+# Python
 .venv/
-.env
 __pycache__/
-.pytest_cache/
 *.pyc
+.pytest_cache/
+
+# Secrets and environment
+.env
+
+# Runtime state and data
 data/*.db
 data/*.log
 data/*.pid
+data/*.input
+data/playbooks/
+
+# Local binaries
 .local/
+
+# Infrastructure config with real host addresses/credentials
 ssh-config
 config/inventory.ini
 ansible/inventory.ini
+
+# Editor/tool caches
+.commandcode/
+.opencode/

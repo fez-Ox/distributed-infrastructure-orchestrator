@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-uv sync
-uv run python -m orchestrator.db
+if command -v uv >/dev/null 2>&1; then
+  uv sync
+  uv run python -m orchestrator.db
+else
+  .venv/bin/python -m orchestrator.db
+fi
 
 if [[ ! -x .local/bin/nats-server ]]; then
   scripts/download_nats_server.sh
 fi
 
+set -a
+[[ -f .env ]] && source .env
+set +a
 scripts/start_nats_local.sh
 scripts/start_state_manager.sh
 

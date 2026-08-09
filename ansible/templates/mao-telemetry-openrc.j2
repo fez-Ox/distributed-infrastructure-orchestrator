@@ -10,6 +10,8 @@ output_log="/var/log/mao-telemetry.log"
 error_log="/var/log/mao-telemetry.err"
 
 export NATS_URL="{{ nats_url }}"
+export NATS_USER="{{ telemetry_nats_user }}"
+export NATS_PASSWORD="{{ telemetry_nats_password }}"
 export NODE_ID="{{ inventory_hostname }}"
 export NODE_TYPE="{{ node_type | default('unknown') }}"
 export NODE_ROLE="{{ node_role | default('worker') }}"

@@ -1,0 +1,28 @@
+#!/sbin/openrc-run
+
+name="mao-child-agent"
+description="Multi-agent orchestration child agent"
+command="/opt/mao/.venv/bin/python"
+command_args="-m node_agent.child_agent"
+command_user="root"
+directory="/opt/mao"
+command_background="yes"
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/mao-child-agent.log"
+error_log="/var/log/mao-child-agent.log"
+
+export NATS_URL="{{ nats_url }}"
+export NATS_USER="{{ nats_user }}"
+export NATS_PASSWORD="{{ nats_password }}"
+export NATS_CREDS_FILE="{{ nats_creds_file }}"
+export ORCHESTRATOR_NODE_ID="vm1"
+export NODE_ID="{{ inventory_hostname }}"
+export NODE_TYPE="{{ node_type | default('unknown') }}"
+export NODE_ROLE="{{ node_role | default('worker') }}"
+export CHILD_AUTH_SECRET="{{ child_auth_secret }}"
+export CHILD_DATABASE_PATH="/opt/mao/data/child_state.db"
+export CHILD_HEARTBEAT_INTERVAL_SECONDS="{{ heartbeat_interval_seconds }}"
+
+depend() {
+    need net
+}

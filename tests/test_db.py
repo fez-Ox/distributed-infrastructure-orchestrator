@@ -1,4 +1,4 @@
-from orchestrator.db import connect, init_db, upsert_telemetry
+from orchestrator.db import claim_child_task, connect, finish_child_task, init_db, upsert_telemetry
 
 
 def test_upsert_telemetry_creates_node_and_latest_row(tmp_path):
@@ -31,3 +31,36 @@ def test_upsert_telemetry_creates_node_and_latest_row(tmp_path):
     assert node["hostname"] == "lxc1"
     assert node["enabled"] == 0
     assert telemetry["ram_percent"] == 50.0
+
+
+def test_child_task_claim_is_idempotent(tmp_path):
+    conn = connect(str(tmp_path / "state.db"))
+    init_db(conn)
+
+    assert claim_child_task(conn, 10, "lxc1", "key-1") == (True, None)
+    assert claim_child_task(conn, 10, "lxc1", "key-1")[0] is False
+
+    finish_child_task(conn, 10, "lxc1", "succeeded", '{"ok":true}')
+    claimed, result = claim_child_task(conn, 10, "lxc1", "key-1")
+    assert claimed is False
+    assert result == '{"ok":true}'
+
+
+def test_mark_stale_agents(tmp_path):
+    from orchestrator.db import mark_stale_agents
+
+    conn = connect(str(tmp_path / "state.db"))
+    init_db(conn)
+    conn.execute("INSERT INTO nodes (node_id, agent_status, agent_last_heartbeat) VALUES ('lxc1', 'online', '2020-01-01T00:00:00+00:00')")
+    conn.commit()
+    assert mark_stale_agents(conn, "2021-01-01T00:00:00+00:00") == 1
+    assert conn.execute("SELECT agent_status FROM nodes WHERE node_id = 'lxc1'").fetchone()[0] == "stale"
+
+
+def test_protocol_message_replay_is_rejected(tmp_path):
+    from orchestrator.db import record_child_message
+
+    conn = connect(str(tmp_path / "state.db"))
+    init_db(conn)
+    assert record_child_message(conn, "msg-1", "lxc1", "heartbeat") is True
+    assert record_child_message(conn, "msg-1", "lxc1", "heartbeat") is False

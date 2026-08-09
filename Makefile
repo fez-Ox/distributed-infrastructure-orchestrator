@@ -1,4 +1,4 @@
-.PHONY: install test db-init download-nats start-nats state-manager telemetry ansible-ping setup-vm1 smoke-test agent lint stop
+.PHONY: install test db-init download-nats start-nats state-manager telemetry ansible-ping setup-vm1 sync-vm1 smoke-test agent lint stop deploy-child-agents child-agent
 
 install:
 	uv sync
@@ -11,6 +11,9 @@ start-nats:
 
 setup-vm1:
 	scripts/setup_vm1_orchestrator.sh
+
+sync-vm1:
+	scripts/sync_vm1.sh
 
 test:
 	uv run pytest
@@ -26,6 +29,12 @@ telemetry:
 
 agent:
 	uv run python -m orchestrator
+
+child-agent:
+	uv run python -m node_agent.child_agent
+
+deploy-child-agents:
+	ANSIBLE_CONFIG=ansible/ansible.cfg uv run ansible-playbook -i ansible/inventory.ini ansible/playbooks/install_child_agent.yml
 
 stop:
 	bash scripts/stop_orchestration.sh

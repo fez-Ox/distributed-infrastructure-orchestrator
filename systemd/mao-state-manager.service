@@ -1,0 +1,16 @@
+[Unit]
+Description=MAO telemetry state manager
+After=network-online.target mao-nats.service
+Requires=mao-nats.service
+
+[Service]
+Type=simple
+User=orchestrator
+WorkingDirectory=/home/orchestrator/multi-agent-orchestration
+EnvironmentFile=/home/orchestrator/multi-agent-orchestration/.env
+ExecStart=/home/orchestrator/multi-agent-orchestration/.venv/bin/python -m orchestrator.state_manager
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

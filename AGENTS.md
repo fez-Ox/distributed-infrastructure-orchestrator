@@ -192,7 +192,7 @@ MVP database should include at least:
 - `telemetry_latest`
 - `tasks`
 
-Task statuses should include:
+Task statuses include:
 
 ```text
 pending
@@ -203,6 +203,9 @@ verifying
 succeeded
 failed
 rejected
+rolling_back
+rolled_back
+rollback_failed
 ```
 
 ## Ansible Rules

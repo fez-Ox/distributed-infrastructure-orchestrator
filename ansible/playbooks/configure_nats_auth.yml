@@ -1,0 +1,62 @@
+---
+# Render authenticated NATS ACLs on the orchestrator.
+# Supply nats_orchestrator_user/password and nats_child_credentials from
+# Ansible Vault or an external secret integration. This playbook does not
+# restart NATS; review the generated config before applying it.
+- name: Configure MAO NATS authentication
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  vars:
+    nats_config_path: "{{ nats_config_path_override | default('/etc/nats/mao-server.conf') }}"
+    nats_credentials_path: "/etc/nats/mao-child-credentials.json"
+    nats_telemetry_credentials_path: "/etc/nats/mao-telemetry-credentials.json"
+    nats_orchestrator_user: "{{ mao_nats_orchestrator_user | mandatory }}"
+    nats_orchestrator_password: "{{ mao_nats_orchestrator_password | mandatory }}"
+    nats_child_credentials: "{{ mao_nats_child_credentials | mandatory }}"
+    nats_telemetry_credentials: "{{ mao_nats_telemetry_credentials | default({}) }}"
+  tasks:
+    - name: Ensure NATS config directory exists
+      ansible.builtin.file:
+        path: "{{ nats_config_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Write child credential input securely
+      ansible.builtin.copy:
+        content: "{{ nats_child_credentials | to_json }}"
+        dest: "{{ nats_credentials_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Write telemetry credential input securely
+      ansible.builtin.copy:
+        content: "{{ nats_telemetry_credentials | to_json }}"
+        dest: "{{ nats_telemetry_credentials_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Render NATS ACL configuration
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/../../scripts/render_nats_config.py"
+          - "{{ nats_config_path }}"
+      environment:
+        NATS_ORCHESTRATOR_USER: "{{ nats_orchestrator_user }}"
+        NATS_ORCHESTRATOR_PASSWORD: "{{ nats_orchestrator_password }}"
+        NATS_CHILD_CREDENTIALS_FILE: "{{ nats_credentials_path }}"
+        NATS_TELEMETRY_CREDENTIALS_FILE: "{{ nats_telemetry_credentials_path }}"
+      no_log: true
+      changed_when: true
+
+    - name: Remind operator to validate and reload NATS
+      ansible.builtin.debug:
+        msg: "Review {{ nats_config_path }} and reload NATS through the approved service procedure."

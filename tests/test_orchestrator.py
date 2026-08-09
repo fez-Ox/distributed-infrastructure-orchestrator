@@ -230,7 +230,7 @@ class TestRenderer:
         playbook = render_playbook(intent)
         assert "vm1" in playbook
         assert "ansible.builtin.apt" in playbook
-        assert "ansible.builtin.command" in playbook
+        assert "community.general.apk" in playbook
 
     def test_render_add_user(self):
         intent = Intent(
@@ -309,7 +309,7 @@ class TestNodes:
     def test_create_and_transition_task(self, tmp_path):
         conn = self._make_conn(tmp_path)
         from orchestrator.nodes import init_nodes
-        init_nodes(conn, {"lxc1", "lxc2"}, api_key="")
+        init_nodes(conn, {"lxc1", "lxc2"}, api_key="", skip_preflight=True)
 
         from orchestrator.nodes import plan_node
         from orchestrator.models import AgentState
@@ -337,7 +337,7 @@ class TestNodes:
         conn.execute("INSERT INTO nodes (node_id, hostname, ip, node_type, role, enabled) VALUES ('lxc1','lxc1','10.0.0.11','lxc','worker',1)")
         conn.commit()
 
-        init_nodes(conn, {"lxc1"}, api_key="")
+        init_nodes(conn, {"lxc1"}, api_key="", skip_preflight=True)
         state = {
             "intent": Intent(
                 action=ActionType.install_pkg,
@@ -361,7 +361,7 @@ class TestNodes:
         conn.execute("INSERT INTO nodes (node_id, hostname, ip, node_type, role, enabled) VALUES ('lxc1','lxc1','10.0.0.11','lxc','worker',1)")
         conn.commit()
 
-        init_nodes(conn, {"lxc1"}, api_key="")
+        init_nodes(conn, {"lxc1"}, api_key="", skip_preflight=True)
         state = {
             "intent": Intent(
                 action=ActionType.install_pkg,
@@ -397,7 +397,7 @@ class TestNodes:
                          (nid, nid, ip, "lxc", "worker"))
         conn.commit()
 
-        nodes.init_nodes(conn, {"lxc1", "lxc2"}, api_key="")
+        nodes.init_nodes(conn, {"lxc1", "lxc2"}, api_key="", skip_preflight=True)
         checkpointer = MemorySaver()
         template_graph, freeform_graph = create_graphs(checkpointer, nodes)
 
@@ -421,7 +421,7 @@ class TestNodes:
                          (nid, nid, ip, "lxc", "worker"))
         conn.commit()
 
-        nodes.init_nodes(conn, {"lxc1", "lxc2"}, api_key="")
+        nodes.init_nodes(conn, {"lxc1", "lxc2"}, api_key="", skip_preflight=True)
         checkpointer = MemorySaver()
         template_graph, _ = create_graphs(checkpointer, nodes)
 

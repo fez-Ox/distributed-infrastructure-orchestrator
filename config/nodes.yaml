@@ -33,4 +33,4 @@ nodes:
     ansible_user: orchestrator
     ssh_identity_file: ~/.ssh/id_ed25519
     enabled: true
-    role: orchestrator
+    role: worker

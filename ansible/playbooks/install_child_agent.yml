@@ -1,0 +1,174 @@
+---
+- name: Install MAO child agent
+  hosts: managed_nodes
+  become: true
+  gather_facts: true
+  vars:
+    nats_url: "{{ lookup('env', 'TELEMETRY_NATS_URL') | default('nats://192.168.122.88:4222', true) }}"
+    child_auth_secret: "{{ lookup('env', 'CHILD_AUTH_SECRET') | default('', true) }}"
+    # Production deployments should provide child_nats_* per host through
+    # inventory/group_vars or Ansible Vault. Environment values are only a
+    # development fallback and must not be shared across all nodes.
+    nats_user: "{{ hostvars[inventory_hostname].child_nats_user | default((child_nats_credentials[inventory_hostname] | default({})).user | default(lookup('env', 'CHILD_NATS_USER'), true), true) }}"
+    nats_password: "{{ hostvars[inventory_hostname].child_nats_password | default((child_nats_credentials[inventory_hostname] | default({})).password | default(lookup('env', 'CHILD_NATS_PASSWORD'), true), true) }}"
+    nats_creds_file: "{{ hostvars[inventory_hostname].child_nats_creds_file | default(lookup('env', 'CHILD_NATS_CREDS_FILE'), true) }}"
+    heartbeat_interval_seconds: "{{ lookup('env', 'CHILD_HEARTBEAT_INTERVAL_SECONDS') | default('15', true) }}"
+    child_nats_credentials: {}
+  tasks:
+    - name: Ensure application directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /opt/mao
+        - /opt/mao/node_agent
+        - /opt/mao/orchestrator
+        - /opt/mao/ansible
+        - /opt/mao/data
+        - /opt/mao/logs
+
+    - name: Copy node_agent package
+      ansible.builtin.copy:
+        src: ../../node_agent/
+        dest: /opt/mao/node_agent/
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Copy orchestrator package
+      ansible.builtin.copy:
+        src: ../../orchestrator/
+        dest: /opt/mao/orchestrator/
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Copy child inventory
+      ansible.builtin.copy:
+        src: ../child_inventory.ini
+        dest: /opt/mao/ansible/child_inventory.ini
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Copy pyproject
+      ansible.builtin.copy:
+        src: ../../pyproject.toml
+        dest: /opt/mao/pyproject.toml
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Write requirements
+      ansible.builtin.copy:
+        content: |
+          ansible-core
+          nats-py
+          pyyaml
+          pydantic
+          python-dotenv
+        dest: /opt/mao/requirements.txt
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Write environment file
+      ansible.builtin.template:
+        src: ../templates/mao-child-agent-env.j2
+        dest: /opt/mao/.env
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Check for an existing Python virtualenv
+      ansible.builtin.stat:
+        path: /opt/mao/.venv/bin/python
+      register: child_venv_python
+
+    - name: Check for virtualenv pip
+      ansible.builtin.stat:
+        path: /opt/mao/.venv/bin/pip
+      register: child_venv_pip
+
+    - name: Ensure venv and pip on Alpine nodes
+      ansible.builtin.apk:
+        name: [python3, py3-pip, py3-virtualenv]
+        state: present
+      when: ansible_facts.os_family == "Alpine" and not child_venv_python.stat.exists
+
+    - name: Ensure python3-venv on Debian nodes
+      ansible.builtin.apt:
+        name: python3-venv
+        state: present
+      when: ansible_facts.os_family == "Debian" and not child_venv_python.stat.exists
+
+    - name: Create virtualenv
+      ansible.builtin.command: python3 -m venv /opt/mao/.venv
+      args:
+        creates: /opt/mao/.venv/bin/python
+      when: not child_venv_python.stat.exists
+
+    - name: Install child agent dependencies
+      ansible.builtin.command:
+        argv:
+          - /opt/mao/.venv/bin/pip
+          - install
+          - --disable-pip-version-check
+          - -r
+          - /opt/mao/requirements.txt
+      changed_when: true
+      when: child_venv_pip.stat.exists or not child_venv_python.stat.exists
+
+    - name: Verify child runtime dependencies
+      ansible.builtin.command:
+        argv:
+          - /opt/mao/.venv/bin/python
+          - -c
+          - import nats, pydantic, yaml
+      changed_when: false
+
+    - name: Install OpenRC service on Alpine nodes
+      ansible.builtin.template:
+        src: ../templates/mao-child-agent-openrc.j2
+        dest: /etc/init.d/mao-child-agent
+        owner: root
+        group: root
+        mode: "0755"
+      when: ansible_facts.os_family == "Alpine"
+
+    - name: Enable child agent service on Alpine nodes
+      ansible.builtin.command: rc-update add mao-child-agent default
+      register: rc_update_child
+      changed_when: "'service mao-child-agent added' in rc_update_child.stdout"
+      when: ansible_facts.os_family == "Alpine"
+
+    - name: Restart child agent service on Alpine nodes
+      ansible.builtin.service:
+        name: mao-child-agent
+        state: restarted
+      when: ansible_facts.os_family == "Alpine"
+
+    - name: Install systemd service on non-Alpine nodes
+      ansible.builtin.template:
+        src: ../templates/mao-child-agent-systemd.j2
+        dest: /etc/systemd/system/mao-child-agent.service
+        owner: root
+        group: root
+        mode: "0644"
+      when: ansible_facts.os_family != "Alpine"
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: ansible_facts.os_family != "Alpine"
+
+    - name: Enable and restart child agent service
+      ansible.builtin.systemd:
+        name: mao-child-agent
+        enabled: true
+        state: restarted
+      when: ansible_facts.os_family != "Alpine"

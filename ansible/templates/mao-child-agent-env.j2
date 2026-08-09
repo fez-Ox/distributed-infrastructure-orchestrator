@@ -1,0 +1,10 @@
+NATS_URL={{ nats_url }}
+NATS_USER={{ nats_user }}
+NATS_PASSWORD={{ nats_password }}
+NATS_CREDS_FILE={{ nats_creds_file }}
+NODE_ID={{ inventory_hostname }}
+NODE_TYPE={{ node_type | default('unknown') }}
+NODE_ROLE={{ node_role | default('worker') }}
+CHILD_AUTH_SECRET={{ child_auth_secret }}
+CHILD_DATABASE_PATH=/opt/mao/data/child_state.db
+CHILD_HEARTBEAT_INTERVAL_SECONDS={{ heartbeat_interval_seconds }}

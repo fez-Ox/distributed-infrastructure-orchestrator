@@ -59,7 +59,11 @@ def create_graphs(checkpointer: MemorySaver, nodes: Any) -> tuple[StateGraph, St
         nodes.route_after_workflow_plan,
         {"approve_plan": "approve_plan", "__end__": END},
     )
-    freeform.add_edge("approve_plan", "execute_step")
+    freeform.add_conditional_edges(
+        "approve_plan",
+        nodes.route_after_step,
+        {"execute_step": "execute_step", "__end__": END},
+    )
     freeform.add_conditional_edges(
         "execute_step",
         nodes.route_after_step,
@@ -72,3 +76,30 @@ def create_graphs(checkpointer: MemorySaver, nodes: Any) -> tuple[StateGraph, St
     )
 
     return template_graph, freeform_graph
+
+
+def create_child_graph(checkpointer: MemorySaver, nodes: Any) -> StateGraph:
+    """Graph for a child agent running on a managed node.
+
+    Child agents reuse the same nodes/guardrails as the orchestrator but
+    enter at 'validate' (intent is supplied by the orchestrator, never planned
+    locally) and execute playbooks locally against the node itself.
+    """
+    checkpointer = checkpointer.with_allowlist(ALLOWED_TYPES)
+    child = StateGraph(AgentState)
+    child.add_node("validate", nodes.validate_node)
+    child.add_node("render", nodes.render_node)
+    child.add_node("syntax_check", nodes.syntax_check_node)
+    child.add_node("execute", nodes.execute_node)
+
+    child.set_entry_point("validate")
+    child.add_edge("validate", "render")
+    child.add_edge("render", "syntax_check")
+    child.add_conditional_edges(
+        "syntax_check",
+        nodes.route_after_syntax,
+        {"execute": "execute", "__end__": END},
+    )
+    child.add_edge("execute", END)
+
+    return child.compile(checkpointer=checkpointer, name="child_graph")

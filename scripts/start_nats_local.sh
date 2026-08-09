@@ -14,7 +14,17 @@ if pgrep -x nats-server >/dev/null; then
   exit 0
 fi
 
-nohup .local/bin/nats-server -a 0.0.0.0 -p 4222 > data/nats-server.log 2>&1 &
+NATS_ARGS=(-a 0.0.0.0 -p 4222)
+if [[ "${NATS_AUTH_REQUIRED:-false}" == "true" ]]; then
+  if command -v uv >/dev/null 2>&1; then
+    uv run python scripts/render_nats_config.py data/nats-server.conf
+  else
+    .venv/bin/python scripts/render_nats_config.py data/nats-server.conf
+  fi
+  NATS_ARGS=(-c data/nats-server.conf)
+fi
+
+nohup .local/bin/nats-server "${NATS_ARGS[@]}" > data/nats-server.log 2>&1 &
 echo $! > data/nats-server.pid
 sleep 1
 pgrep -af nats-server

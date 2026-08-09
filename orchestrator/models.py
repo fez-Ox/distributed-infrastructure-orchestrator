@@ -7,9 +7,15 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 
+class AgentMode(str, Enum):
+    orchestrator = "orchestrator"
+    child = "child"
+
+
 class TaskType(str, Enum):
     template = "template"
     freeform = "freeform"
+    child = "child"
 
 
 class ActionType(str, Enum):
@@ -19,6 +25,14 @@ class ActionType(str, Enum):
     config_file = "config-file"
     restart_service = "restart-service"
     freeform = "freeform"
+    service_status = "service-status"
+    log_tail = "log-tail"
+    disk_check = "disk-check"
+    workload_readiness = "workload-readiness"
+    capabilities_report = "capabilities-report"
+    install_local_package = "install-local-package"
+    ensure_local_service = "ensure-local-service"
+    write_local_state = "write-local-state"
 
 
 class TaskStatus(str, Enum):
@@ -30,6 +44,9 @@ class TaskStatus(str, Enum):
     succeeded = "succeeded"
     failed = "failed"
     rejected = "rejected"
+    rolling_back = "rolling_back"
+    rolled_back = "rolled_back"
+    rollback_failed = "rollback_failed"
 
 
 class NodeSelector(BaseModel):
@@ -71,6 +88,9 @@ class PlanStatus(str, Enum):
     executing = "executing"
     completed = "completed"
     failed = "failed"
+    rolling_back = "rolling_back"
+    rolled_back = "rolled_back"
+    rollback_failed = "rollback_failed"
 
 
 class StepStatus(str, Enum):
@@ -79,11 +99,15 @@ class StepStatus(str, Enum):
     succeeded = "succeeded"
     failed = "failed"
     skipped = "skipped"
+    rolling_back = "rolling_back"
+    rolled_back = "rolled_back"
+    rollback_failed = "rollback_failed"
 
 
 class WorkflowStep(BaseModel):
     description: str
     playbook: str
+    rollback_playbook: str | None = Field(None, description="Ansible playbook YAML to undo this step")
     verification: str | None = None
 
 
@@ -129,3 +153,4 @@ class AgentState(TypedDict):
     ansible_stderr: str
     error: Optional[str]
     status: str
+    authorization_ok: bool

@@ -1,8 +1,0 @@
----
-- hosts: managed_nodes
-  gather_facts: no
-  tasks:
-    - name: Update all packages
-      ansible.builtin.package:
-        name: '*'
-        state: latest

@@ -1,0 +1,19 @@
+[Unit]
+Description=MAO orchestrator and child-agent bridge
+After=network-online.target mao-nats.service mao-state-manager.service
+Requires=mao-nats.service mao-state-manager.service
+
+[Service]
+Type=simple
+User=orchestrator
+WorkingDirectory=/home/orchestrator/multi-agent-orchestration
+EnvironmentFile=/home/orchestrator/multi-agent-orchestration/.env
+ExecStartPre=/bin/sh -c "test -f /home/orchestrator/multi-agent-orchestration/data/orchestrator.input && test ! -p /home/orchestrator/multi-agent-orchestration/data/orchestrator.input || { rm -f /home/orchestrator/multi-agent-orchestration/data/orchestrator.input; touch /home/orchestrator/multi-agent-orchestration/data/orchestrator.input; }"
+ExecStartPre=/usr/bin/chmod 0600 /home/orchestrator/multi-agent-orchestration/data/orchestrator.input
+Environment=MAO_INPUT_PATH=/home/orchestrator/multi-agent-orchestration/data/orchestrator.input
+ExecStart=/home/orchestrator/multi-agent-orchestration/.venv/bin/python -m orchestrator.daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

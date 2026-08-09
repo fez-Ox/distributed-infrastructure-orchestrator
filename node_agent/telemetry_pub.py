@@ -8,6 +8,8 @@ import time
 from datetime import datetime, timezone
 
 NATS_URL = os.environ.get("NATS_URL", "nats://127.0.0.1:4222")
+NATS_USER = os.environ.get("NATS_USER", "")
+NATS_PASSWORD = os.environ.get("NATS_PASSWORD", "")
 NODE_ID = os.environ.get("NODE_ID") or socket.gethostname().lower()
 NODE_TYPE = os.environ.get("NODE_TYPE", "unknown")
 NODE_ROLE = os.environ.get("NODE_ROLE", "worker")
@@ -102,7 +104,11 @@ def nats_pub(subject: str, payload: dict) -> None:
     with socket.create_connection((host, port), timeout=5) as sock:
         sock.settimeout(5)
         sock.recv(1024)  # INFO line
-        sock.sendall(b'CONNECT {"verbose":false,"pedantic":false}\r\n')
+        auth = ""
+        if NATS_USER:
+            # NATS accepts user/pass in the CONNECT payload; values are never logged.
+            auth = f',"user":{json.dumps(NATS_USER)},"pass":{json.dumps(NATS_PASSWORD)}'
+        sock.sendall(f'CONNECT {{"verbose":false,"pedantic":false{auth}}}\r\n'.encode("utf-8"))
         cmd = f"PUB {subject} {len(body)}\r\n".encode("ascii") + body + b"\r\n"
         sock.sendall(cmd)
 

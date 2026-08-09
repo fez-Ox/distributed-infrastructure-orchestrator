@@ -6,6 +6,9 @@
   vars:
     nats_url: "{{ lookup('env', 'TELEMETRY_NATS_URL') | default('nats://192.168.122.88:4222', true) }}"
     telemetry_interval_seconds: 5
+    telemetry_nats_user: "{{ hostvars[inventory_hostname].telemetry_nats_user | default((telemetry_nats_credentials[inventory_hostname] | default({})).user | default(lookup('env', 'TELEMETRY_NATS_USER'), true), true) }}"
+    telemetry_nats_password: "{{ hostvars[inventory_hostname].telemetry_nats_password | default((telemetry_nats_credentials[inventory_hostname] | default({})).password | default(lookup('env', 'TELEMETRY_NATS_PASSWORD'), true), true) }}"
+    telemetry_nats_credentials: {}
   tasks:
     - name: Ensure application directory exists
       ansible.builtin.file:
@@ -31,6 +34,7 @@
         group: root
         mode: "0755"
       when: ansible_facts.os_family == "Alpine"
+      no_log: true
 
     - name: Enable telemetry service on Alpine nodes
       ansible.builtin.command: rc-update add mao-telemetry default

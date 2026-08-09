@@ -99,13 +99,12 @@ The AI Agent is a **CLI REPL application** (`python3 -m orchestrator`) running o
 The Orchestrator stores inventory, latest telemetry, and task history locally. SQLite is sufficient for the MVP.
 
 Tables:
-*   `nodes`: `node_id`, `hostname`, `ip`, `node_type`, `role`, `enabled`, `last_seen`.
+*   `nodes`: `node_id`, `hostname`, `ip`, `node_type`, `role`, `enabled`, `last_seen`, `agent_status`, `agent_capabilities`, `agent_readiness`.
 *   `telemetry_latest`: latest CPU, RAM, disk, uptime, and timestamp per node.
 *   `tasks`: user request, structured intent (JSON), target node, status, Ansible output, timestamps.
-*   `plans`: user request, description, status (planning/awaiting_approval/executing/completed/failed).
-*   `plan_steps`: per-step: description, playbook_yaml, verification_command, status, Ansible output.
+*   `task_steps`: per-step: `step_index`, `description`, `playbook_yaml`, `rollback_playbook_yaml`, `status`, `ansible_stdout`, `ansible_stderr`, `rollback_status`, `rollback_ansible_stdout`, `rollback_ansible_stderr`.
 
-Task statuses: `pending`, `planning`, `awaiting_approval`, `running`, `verifying`, `succeeded`, `failed`, `rejected`.
+Task statuses: `pending`, `planning`, `awaiting_approval`, `running`, `verifying`, `succeeded`, `failed`, `rejected`, `rolling_back`, `rolled_back`, `rollback_failed`.
 
 ### 3.5 Action Catalog (Template Mode)
 Five template actions with Jinja2 playbooks:
