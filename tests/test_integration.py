@@ -430,7 +430,7 @@ class TestSnapshotRollbackPipeline:
 
         monkeypatch.setattr("orchestrator.snapshot.ANSIBLE_INVENTORY", tmp_path / "inventory.ini")
         inv_file = tmp_path / "inventory.ini"
-        inv_file.write_text("lxc1 ansible_host=192.168.122.238\n")
+        inv_file.write_text("lxc1 ansible_host=192.0.2.21\n")
 
         db_path = tmp_path / "snapcycle.db"
         conn = connect(str(db_path))
@@ -478,7 +478,7 @@ class TestSnapshotRollbackPipeline:
 
         monkeypatch.setattr("orchestrator.snapshot.ANSIBLE_INVENTORY", tmp_path / "inventory.ini")
         inv_file = tmp_path / "inventory.ini"
-        inv_file.write_text("lxc1 ansible_host=192.168.122.238\n")
+        inv_file.write_text("lxc1 ansible_host=192.0.2.21\n")
 
         db_path = tmp_path / "snapdel.db"
         conn = connect(str(db_path))

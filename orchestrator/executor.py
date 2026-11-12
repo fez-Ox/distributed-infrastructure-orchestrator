@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ANSIBLE_INVENTORY = Path(__file__).resolve().parent.parent / "ansible" / "inventory.ini"
+from orchestrator.paths import ANSIBLE_INVENTORY
+
 CHILD_INVENTORY = Path(__file__).resolve().parent.parent / "ansible" / "child_inventory.ini"
 ANSIBLE_CONFIG = Path(__file__).resolve().parent.parent / "ansible" / "ansible.cfg"
 PLAYBOOK_DIR = Path(__file__).resolve().parent.parent / "data" / "playbooks"

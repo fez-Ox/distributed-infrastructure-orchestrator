@@ -4,7 +4,7 @@
   become: true
   gather_facts: true
   vars:
-    nats_url: "{{ lookup('env', 'TELEMETRY_NATS_URL') | default('nats://192.168.122.88:4222', true) }}"
+    nats_url: "{{ lookup('env', 'TELEMETRY_NATS_URL') | default('nats://orchestrator.example:4222', true) }}"
     telemetry_interval_seconds: 5
     telemetry_nats_user: "{{ hostvars[inventory_hostname].telemetry_nats_user | default((telemetry_nats_credentials[inventory_hostname] | default({})).user | default(lookup('env', 'TELEMETRY_NATS_USER'), true), true) }}"
     telemetry_nats_password: "{{ hostvars[inventory_hostname].telemetry_nats_password | default((telemetry_nats_credentials[inventory_hostname] | default({})).password | default(lookup('env', 'TELEMETRY_NATS_PASSWORD'), true), true) }}"

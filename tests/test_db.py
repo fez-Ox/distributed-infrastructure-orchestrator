@@ -9,7 +9,7 @@ def test_upsert_telemetry_creates_node_and_latest_row(tmp_path):
     payload = {
         "node_id": "lxc1",
         "hostname": "lxc1",
-        "ip": "192.168.122.238",
+        "ip": "192.0.2.21",
         "node_type": "lxc",
         "role": "worker",
         "cpu_percent": 1.5,

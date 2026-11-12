@@ -12,9 +12,9 @@ from typing import Any
 from jinja2 import BaseLoader, Environment, StrictUndefined
 
 from orchestrator.db import connect
+from orchestrator.paths import ANSIBLE_INVENTORY
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "ansible" / "templates"
-ANSIBLE_INVENTORY = Path(__file__).resolve().parent.parent / "ansible" / "inventory.ini"
 ANSIBLE_CONFIG = Path(__file__).resolve().parent.parent / "ansible" / "ansible.cfg"
 SNAPSHOT_DIR_BASE = "/var/backups/mao"
 

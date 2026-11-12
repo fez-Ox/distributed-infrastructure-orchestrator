@@ -6,11 +6,11 @@ This document provides a minimal implementation plan that starts with Option A: 
 Option B, distributed child-side agents, is not part of the MVP but is a required later phase. The Option A implementation should be built in a way that allows child agents to be added without replacing the whole system.
 
 **Current Status:** Phases 1–5 complete. Phase 6 (plan rollback) is next.
-**Current Cluster:** VM1 (orchestrator), VM2 (worker), LXC1 (worker), LXC2 (worker).
+**Example Cluster:** `vm1` (orchestrator), `vm2` (worker), `lxc1` (worker), `lxc2` (worker).
 
 ## 2. Prerequisites
-*   Proxmox VE environment with 1 Orchestrator VM and at least 2 managed nodes provisioned. In the current environment, **VM1 (`192.168.122.88`) is the Orchestrator** and LXC1/LXC2 are managed nodes. Managed nodes can be LXCs or VMs.
-*   Stable IPs or DNS names assigned to all nodes: VM1 (192.168.122.88), VM2 (192.168.122.89), LXC1 (192.168.122.238), LXC2 (192.168.122.239).
+*   Proxmox VE environment with 1 Orchestrator VM and at least 2 managed nodes provisioned. In the example topology, `vm1` (`192.0.2.10`) is the Orchestrator and `lxc1`/`lxc2` are managed nodes. Managed nodes can be LXCs or VMs.
+*   Stable IPs or DNS names assigned to all nodes. Example addresses use the RFC 5737 documentation range: `vm1` (192.0.2.10), `vm2` (192.0.2.11), `lxc1` (192.0.2.21), `lxc2` (192.0.2.22).
 *   SSH access configured from the Orchestrator to each managed node.
 *   Python 3.10+ installed on all nodes.
 *   A node naming convention, e.g. `lxc1`, `lxc2`, `vm1`, `worker-001`.
@@ -24,12 +24,12 @@ Option B, distributed child-side agents, is not part of the MVP but is a require
 2.  **Install and Configure Ansible:** Ansible installed in `.venv` on VM1. Inventory file at `ansible/inventory.ini` with groups:
     ```ini
     [orchestrator]
-    vm1 ansible_host=192.168.122.88 ansible_user=orchestrator node_type=vm role=orchestrator
+    vm1 ansible_host=192.0.2.10 ansible_user=orchestrator node_type=vm role=orchestrator
 
     [managed_nodes]
-    lxc1 ansible_host=192.168.122.238 ansible_user=orchestrator node_type=lxc role=worker
-    lxc2 ansible_host=192.168.122.239 ansible_user=orchestrator node_type=lxc role=worker
-    vm2 ansible_host=192.168.122.89 ansible_user=orchestrator node_type=vm role=worker
+    lxc1 ansible_host=192.0.2.21 ansible_user=orchestrator node_type=lxc role=worker
+    lxc2 ansible_host=192.0.2.22 ansible_user=orchestrator node_type=lxc role=worker
+    vm2 ansible_host=192.0.2.11 ansible_user=orchestrator node_type=vm role=worker
 
     [lxcs]
     lxc1

@@ -10,11 +10,11 @@ Option B, distributed child-side agents, is an eventual required evolution after
 To ensure reliability and separation of concerns, the system strictly separates the "Brain" (AI reasoning) from the "Hands" (deterministic execution). **NATS** is used as the high-performance message broker for telemetry and state synchronization, while **Ansible** is used as the idempotent execution engine for system configuration.
 
 ## 2. System Topology
-The system consists of one Orchestrator VM and a variable number of managed nodes connected through the Proxmox network bridge (e.g., `vmbr0`) with stable IPs or resolvable hostnames.
+The system consists of one Orchestrator VM and a variable number of managed nodes connected through the Proxmox network bridge (e.g., `vmbr0`) with stable IPs or resolvable hostnames. Addresses in this document come from the RFC 5737 documentation range and are not a real deployment.
 
-*   **Orchestrator VM:** The central hub. For the current environment this is **VM1 (`192.168.122.88`)**. Hosts the NATS server, State Database, AI Orchestrator Agent, and Ansible control node.
+*   **Orchestrator VM:** The central hub, for example `vm1` (`192.0.2.10`). Hosts the NATS server, State Database, AI Orchestrator Agent, and Ansible control node.
 *   **Managed Nodes:** LXCs or VMs managed by the orchestrator. Each node hosts a lightweight telemetry publisher and an SSH server for Ansible during the MVP. Later, each node will also host a local child agent for Option B distributed orchestration.
-    *   Current cluster: **VM2** (`192.168.122.89`, worker VM), **LXC1** (`192.168.122.238`, worker), **LXC2** (`192.168.122.239`, worker).
+    *   Example cluster: `vm2` (`192.0.2.11`, worker VM), `lxc1` (`192.0.2.21`, worker), `lxc2` (`192.0.2.22`, worker).
 
 Nodes are not hardcoded to a fixed set. The inventory and state database must support adding, removing, and disabling nodes over time.
 

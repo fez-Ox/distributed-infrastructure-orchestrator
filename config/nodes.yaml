@@ -1,7 +1,7 @@
 nodes:
   - node_id: lxc1
     hostname: LXC1
-    ip: 192.168.122.238
+    ip: 192.0.2.21
     node_type: lxc
     ansible_user: orchestrator
     ssh_identity_file: ~/.ssh/id_ed25519
@@ -10,7 +10,7 @@ nodes:
 
   - node_id: lxc2
     hostname: LXC2
-    ip: 192.168.122.239
+    ip: 192.0.2.22
     node_type: lxc
     ansible_user: orchestrator
     ssh_identity_file: ~/.ssh/id_ed25519
@@ -19,7 +19,7 @@ nodes:
 
   - node_id: vm1
     hostname: VM1
-    ip: 192.168.122.88
+    ip: 192.0.2.10
     node_type: vm
     ansible_user: orchestrator
     ssh_identity_file: ~/.ssh/id_ed25519
@@ -28,7 +28,7 @@ nodes:
 
   - node_id: vm2
     hostname: VM2
-    ip: 192.168.122.89
+    ip: 192.0.2.11
     node_type: vm
     ansible_user: orchestrator
     ssh_identity_file: ~/.ssh/id_ed25519

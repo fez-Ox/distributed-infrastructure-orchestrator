@@ -20,4 +20,4 @@ scripts/start_state_manager.sh
 
 echo "VM1 orchestrator setup complete"
 echo "NATS_URL=${NATS_URL:-nats://127.0.0.1:4222}"
-echo "TELEMETRY_NATS_URL=${TELEMETRY_NATS_URL:-nats://192.168.122.88:4222}"
+echo "TELEMETRY_NATS_URL=${TELEMETRY_NATS_URL:-nats://orchestrator.example:4222}"

@@ -9,13 +9,13 @@ from pathlib import Path
 from typing import Any
 
 from orchestrator.models import ActionType
+from orchestrator.paths import ANSIBLE_INVENTORY
 
 
 class PreflightError(Exception):
     pass
 
 
-ANSIBLE_INVENTORY = Path(__file__).resolve().parent.parent / "ansible" / "inventory.ini"
 ANSIBLE_CONFIG = Path(__file__).resolve().parent.parent / "ansible" / "ansible.cfg"
 
 

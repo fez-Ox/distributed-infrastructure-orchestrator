@@ -105,7 +105,7 @@ class TestSnapshotManager:
 
         monkeypatch.setattr("orchestrator.snapshot.ANSIBLE_INVENTORY", tmp_path / "inventory.ini")
         inv_file = tmp_path / "inventory.ini"
-        inv_file.write_text("lxc1 ansible_host=192.168.122.238\n")
+        inv_file.write_text("lxc1 ansible_host=192.0.2.21\n")
 
         mgr = SnapshotManager(db=conn)
         mgr.create(task_id=1, node_id="lxc1")
@@ -126,7 +126,7 @@ class TestSnapshotManager:
 
         monkeypatch.setattr("orchestrator.snapshot.ANSIBLE_INVENTORY", tmp_path / "inventory.ini")
         inv_file = tmp_path / "inventory.ini"
-        inv_file.write_text("lxc1 ansible_host=192.168.122.238\n")
+        inv_file.write_text("lxc1 ansible_host=192.0.2.21\n")
 
         mgr = SnapshotManager(db=conn)
         mgr.create(task_id=1, node_id="lxc1", step_id=0)
@@ -161,7 +161,7 @@ class TestSnapshotManager:
 
         monkeypatch.setattr("orchestrator.snapshot.ANSIBLE_INVENTORY", tmp_path / "inventory.ini")
         inv_file = tmp_path / "inventory.ini"
-        inv_file.write_text("lxc1 ansible_host=192.168.122.238\n")
+        inv_file.write_text("lxc1 ansible_host=192.0.2.21\n")
 
         mgr = SnapshotManager(db=conn)
         mgr.create(task_id=42, node_id="lxc1")
@@ -185,7 +185,7 @@ class TestSnapshotManager:
 
         monkeypatch.setattr("orchestrator.snapshot.ANSIBLE_INVENTORY", tmp_path / "inventory.ini")
         inv_file = tmp_path / "inventory.ini"
-        inv_file.write_text("lxc1 ansible_host=192.168.122.238\n")
+        inv_file.write_text("lxc1 ansible_host=192.0.2.21\n")
 
         mgr = SnapshotManager(db=conn)
         mgr.create(task_id=1, node_id="lxc1")
@@ -201,15 +201,15 @@ class TestSnapshotManager:
 
         monkeypatch.setattr("orchestrator.snapshot.ANSIBLE_INVENTORY", tmp_path / "inventory.ini")
         inv_file = tmp_path / "inventory.ini"
-        inv_file.write_text("lxc1 ansible_host=192.168.122.238\n")
+        inv_file.write_text("lxc1 ansible_host=192.0.2.21\n")
 
         conn.execute(
             "INSERT INTO snapshots (task_id, node_id, target_host, snapshot_path, size_bytes, status) VALUES (?, ?, ?, ?, ?, ?)",
-            (1, "lxc1", "192.168.122.238", "/var/backups/mao/1", 1024, "created"),
+            (1, "lxc1", "192.0.2.21", "/var/backups/mao/1", 1024, "created"),
         )
         conn.execute(
             "INSERT INTO snapshots (task_id, node_id, target_host, snapshot_path, size_bytes, status) VALUES (?, ?, ?, ?, ?, ?)",
-            (2, "lxc1", "192.168.122.238", "/var/backups/mao/2", 2048, "created"),
+            (2, "lxc1", "192.0.2.21", "/var/backups/mao/2", 2048, "created"),
         )
         conn.commit()
 
@@ -227,7 +227,7 @@ class TestSnapshotManager:
 
         monkeypatch.setattr("orchestrator.snapshot.ANSIBLE_INVENTORY", tmp_path / "inventory.ini")
         inv_file = tmp_path / "inventory.ini"
-        inv_file.write_text("lxc1 ansible_host=192.168.122.238\n")
+        inv_file.write_text("lxc1 ansible_host=192.0.2.21\n")
 
         monkeypatch.setattr("orchestrator.snapshot._run_playbook", lambda *a, **kw: {"ok": True, "stdout": "", "stderr": ""})
 
@@ -255,7 +255,7 @@ class TestSnapshotManager:
         init_db(conn)
         conn.execute(
             "INSERT INTO snapshots (task_id, node_id, target_host, snapshot_path, status) VALUES (?, ?, ?, ?, ?)",
-            (1, "lxc1", "192.168.122.238", "/var/backups/mao/1", "rolled_back"),
+            (1, "lxc1", "192.0.2.21", "/var/backups/mao/1", "rolled_back"),
         )
         conn.commit()
         mgr = SnapshotManager(db=conn)

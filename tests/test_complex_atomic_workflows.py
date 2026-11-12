@@ -28,10 +28,10 @@ class TestComplexAtomicWorkflows:
         conn = connect(str(db_path))
         init_db(conn)
         for nid, ip, ntype, role in [
-            ("vm1", "192.168.122.88", "vm", "orchestrator"),
-            ("vm2", "192.168.122.89", "vm", "worker"),
-            ("lxc1", "192.168.122.238", "lxc", "worker"),
-            ("lxc2", "192.168.122.239", "lxc", "worker"),
+            ("vm1", "192.0.2.10", "vm", "orchestrator"),
+            ("vm2", "192.0.2.11", "vm", "worker"),
+            ("lxc1", "192.0.2.21", "lxc", "worker"),
+            ("lxc2", "192.0.2.22", "lxc", "worker"),
         ]:
             conn.execute(
                 "INSERT INTO nodes (node_id, hostname, ip, node_type, role, enabled) VALUES (?, ?, ?, ?, ?, 1)",

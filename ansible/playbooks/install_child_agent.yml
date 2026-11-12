@@ -4,7 +4,7 @@
   become: true
   gather_facts: true
   vars:
-    nats_url: "{{ lookup('env', 'TELEMETRY_NATS_URL') | default('nats://192.168.122.88:4222', true) }}"
+    nats_url: "{{ lookup('env', 'TELEMETRY_NATS_URL') | default('nats://orchestrator.example:4222', true) }}"
     child_auth_secret: "{{ lookup('env', 'CHILD_AUTH_SECRET') | default('', true) }}"
     # Production deployments should provide child_nats_* per host through
     # inventory/group_vars or Ansible Vault. Environment values are only a
